@@ -10,6 +10,7 @@ from .update_coordinator import MonarchCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Monarch Money from a config entry."""
     hass.data.setdefault(DOMAIN, {})
