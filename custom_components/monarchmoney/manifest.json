@@ -1,5 +1,5 @@
 {
-  "domain": "monarch",
+  "domain": "monarchmoney",
   "name": "Monarch",
   "codeowners": [
     "@sanghviharshit"
@@ -9,7 +9,9 @@
   "documentation": "https://github.com/sanghviharshit/ha-monarchmoney",
   "homekit": {},
   "iot_class": "cloud_polling",
-  "requirements": [],
+  "requirements": [
+    "git+https://github.com/hammem/monarchmoney@main#"
+  ],
   "ssdp": [],
   "version": "0.0.1",
   "zeroconf": []
