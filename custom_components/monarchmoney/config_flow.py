@@ -1,10 +1,10 @@
 """Config flow for Monarch Money integration."""
+from __future__ import annotations
 import logging
 
 import voluptuous as vol
 
 from typing import Any, Optional
-from __future__ import annotations
 from asyncio.log import logger
 from homeassistant.config_entries import (
     ConfigEntry,

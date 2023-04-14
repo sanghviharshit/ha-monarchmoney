@@ -1,6 +1,6 @@
 """Constants for the Monarch Money integration."""
 
-DOMAIN = "monarch"
+DOMAIN = "monarchmoney"
 
 ATTRIBUTION = "Data provided by Monarch"
 SESSION_FILE = ".mm-session"
