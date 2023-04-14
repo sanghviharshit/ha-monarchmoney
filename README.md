@@ -4,7 +4,7 @@
 
 **Integration for Monarch in Home Assistant**
 
-[Monarch](https://milacares.com/) is modern way to manage your money and lets you track all of your account balances, transactions, and investments in one place.
+[Monarch](https://www.monarchmoney.com/referral/craudhiyod) is modern way to manage your money and lets you track all of your account balances, transactions, and investments in one place.
 
 [Home Assistant](https://www.home-assistant.io/) is an open source home automation package that puts local control and privacy first.
 This integration leverages Monarch's API to collect the accounts' data in Home Assistant.
