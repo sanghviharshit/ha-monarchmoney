@@ -83,7 +83,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.logger.info("Successfully authenticated")
 
         # set the token to the one just obtained
-        api.save_session(SESSION_FILE)
+        api.save_session(self.hass.config.path(SESSION_FILE))
         # self._user_input["api"] = api
 
     def _show_setup_form(self, user_input=None, errors=None, step_id="user"):

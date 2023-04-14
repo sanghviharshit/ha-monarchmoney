@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 ATTR_ASSETS = "ASSETS"
 ATTR_LIABILITIES = "LIABILITIES"
 
-ATTR_BROKERAGE = "Investents"
+ATTR_BROKERAGE = "Investments"
 ATTR_CREDIT = "Credit Cards"
 ATTR_DEPOSITORY = "Cash"
 ATTR_LOAN = "Loans"
