@@ -32,8 +32,8 @@ class MonarchCoordinator(DataUpdateCoordinator):
         """Initialize my coordinator."""
         self._hass = hass
         self._config_entry = config_entry
-        self._api = MonarchMoney()
-        self._api.load_session(hass.config.path(SESSION_FILE))
+        self._api = MonarchMoney(session_file=self._hass.config.path(SESSION_FILE))
+        self._api.load_session(filename=self._hass.config.path(SESSION_FILE))
 
         options = config_entry.options
         self._update_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)

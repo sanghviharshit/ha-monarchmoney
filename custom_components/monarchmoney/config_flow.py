@@ -70,7 +70,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return vol.Schema({vol.Required(CONF_PASSWORD): str})
 
     async def _test_connection_and_set_token(self):
-        api = MonarchMoney()
+        api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
         await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
         # TODO exception handling
         # except LoginFailedException as exc:
@@ -83,7 +83,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.logger.info("Successfully authenticated")
 
         # set the token to the one just obtained
-        api.save_session(self.hass.config.path(SESSION_FILE))
+        api.save_session(filename=self.hass.config.path(SESSION_FILE))
         # self._user_input["api"] = api
 
     def _show_setup_form(self, user_input=None, errors=None, step_id="user"):

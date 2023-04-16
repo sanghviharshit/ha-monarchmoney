@@ -1,6 +1,6 @@
 """Sensor Platform"""
 import logging
-from config.custom_components.monarchmoney.util import format_date
+from .util import format_date
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
