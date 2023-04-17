@@ -1,7 +1,7 @@
 {
-  "domains": [
-    "sensor"
-  ],
   "name": "Monarch",
+  "country": [
+    "US"
+  ],
   "render_readme": true
 }
