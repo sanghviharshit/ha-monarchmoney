@@ -35,32 +35,32 @@ ATTR_OTHER_LIABILITY = "Other Liabilities"
 
 SENSOR_TYPES_GROUP = {
     ATTR_BROKERAGE: {
-        "type": "BROKERAGE",
+        "type": "brokerage",
         "group": ATTR_ASSETS,
         "icon": "mdi:chart-line",
     },
     ATTR_CREDIT: {
-        "type": "CREDIT",
+        "type": "credit",
         "group": ATTR_LIABILITIES,
         "icon": "mdi:credit-card",
     },
-    ATTR_DEPOSITORY: {"type": "DEPOSITORY", "group": ATTR_ASSETS, "icon": "mdi:cash"},
-    ATTR_LOAN: {"type": "LOAN", "group": ATTR_LIABILITIES, "icon": "mdi:bank"},
-    ATTR_OTHER: {"type": "OTHER", "group": "OTHER", "icon": "mdi:information-outline"},
-    ATTR_REAL_ESTATE: {"type": "REAL_ESTATE", "group": ATTR_ASSETS, "icon": "mdi:home"},
+    ATTR_DEPOSITORY: {"type": "depository", "group": ATTR_ASSETS, "icon": "mdi:cash"},
+    ATTR_LOAN: {"type": "loan", "group": ATTR_LIABILITIES, "icon": "mdi:bank"},
+    ATTR_OTHER: {"type": "other", "group": "OTHER", "icon": "mdi:information-outline"},
+    ATTR_REAL_ESTATE: {"type": "real_estate", "group": ATTR_ASSETS, "icon": "mdi:home"},
     ATTR_VALUABLE: {
-        "type": "VALUABLE",
+        "type": "valuables",
         "group": ATTR_ASSETS,
         "icon": "mdi:treasure-chest",
     },
-    ATTR_VEHICLE: {"type": "VEHICLE", "group": ATTR_ASSETS, "icon": "mdi:car"},
+    ATTR_VEHICLE: {"type": "vehicle", "group": ATTR_ASSETS, "icon": "mdi:car"},
     ATTR_OTHER_ASSET: {
-        "type": "OTHER_ASSET",
+        "type": "other_asset",
         "group": ATTR_ASSETS,
         "icon": "mdi:file-document-outline",
     },
     ATTR_OTHER_LIABILITY: {
-        "type": "OTHER_LIABILITY",
+        "type": "other_liability",
         "group": ATTR_LIABILITIES,
         "icon": "mdi:account-alert-outline",
     },
@@ -135,13 +135,19 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         ]
 
         for account in sensor_type_accounts:
+            institution = None
+            try:
+                institution = account.get("credential").get("institution").get("name", "")
+            except AttributeError:
+                pass
+
             self._account_data[account.get("id", "")] = {
                 "id": account.get("id", ""),
                 "name": account.get("displayName", ""),
                 "balance": account.get("displayBalance", ""),
                 "account_type": account.get("type").get("name", ""),
                 "updated": format_date(account.get("updatedAt", "")),
-                "institute": account.get("institute"),
+                "institution": institution,
             }
 
         sensor_type_accounts_sum = round(
