@@ -14,10 +14,11 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.const import CONF_SCAN_INTERVAL, CONF_EMAIL, CONF_PASSWORD
-from monarchmoney import MonarchMoney
+from monarchmoney import MonarchMoney, RequireMFAException
 
 from .const import (
     CONF_TIMEOUT,
+    CONF_MFA,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -32,6 +33,12 @@ CREDENTIALS_SCHEMA = vol.Schema(
     {
         vol.Required("email"): str,
         vol.Required("password"): str,
+    }
+)
+
+MFA_SCHEMA = vol.Schema(
+    {
+        vol.Required("mfa"): str,
     }
 )
 
@@ -71,7 +78,10 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _test_connection_and_set_token(self):
         api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
-        await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
+        try:
+            await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
+        except RequireMFAException:
+            await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD], self._user_input[CONF_MFA])
         # TODO exception handling
         # except LoginFailedException as exc:
         #     raise InvalidAuth from exc
