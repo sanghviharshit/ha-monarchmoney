@@ -76,11 +76,12 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         else:
             return vol.Schema({vol.Required(CONF_PASSWORD): str})
 
-    async def _test_connection_and_set_token(self):
+    async def _test_connection_and_set_token(self, user_input):
         api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
         try:
             await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
         except RequireMFAException:
+            self._user_input[CONF_MFA] = user_input[CONF_MFA]
             await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD], self._user_input[CONF_MFA])
         # TODO exception handling
         # except LoginFailedException as exc:
@@ -96,7 +97,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         api.save_session(filename=self.hass.config.path(SESSION_FILE))
         # self._user_input["api"] = api
 
-    def _show_setup_form(self, user_input=None, errors=None, step_id="user"):
+    def _show_setup_form(self, user_input=None, errors=None, step_id=None):
         """Show the setup form to the user."""
 
         if user_input is None:
@@ -109,10 +110,11 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders=self._description_placeholders,
         )
 
-    async def _validate_and_create_entry(self, user_input, step_id):
+    async def _validate_and_create_entry(self, user_input, step_id="user"):
         """Check if config is valid and create entry if so."""
 
         self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+
 
         extra_inputs = user_input
 
@@ -157,6 +159,17 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self._show_setup_form(user_input, errors)
 
         return await self._validate_and_create_entry(user_input, "user")
+
+    async def async_step_mfa(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the initial step."""
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            return self._show_setup_form(user_input, errors)
+
+        return await self._validate_and_create_entry(user_input, "mfa")
 
     async def async_step_reauth(self, entry_data) -> FlowResult:
         """Handle configuration by re-auth."""
