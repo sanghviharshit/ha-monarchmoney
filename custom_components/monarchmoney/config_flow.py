@@ -73,16 +73,31 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _get_schema(self, step_id: str):
         if step_id == "user":
             return CREDENTIALS_SCHEMA
+        elif step_id == "mfa":
+            return MFA_SCHEMA
         else:
             return vol.Schema({vol.Required(CONF_PASSWORD): str})
 
     async def _test_connection_and_set_token(self, user_input):
         api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
-        try:
-            await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
-        except RequireMFAException:
-            self._user_input[CONF_MFA] = user_input[CONF_MFA]
-            await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD], self._user_input[CONF_MFA])
+        await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
+        # TODO exception handling
+        # except LoginFailedException as exc:
+        #     raise InvalidAuth from exc
+        # If you cannot connect:
+        # throw CannotConnect
+
+        # try to get account information, if we do, we're good
+        # await api.get_account()
+        self.logger.info("Successfully authenticated")
+
+        # set the token to the one just obtained
+        api.save_session(filename=self.hass.config.path(SESSION_FILE))
+        # self._user_input["api"] = api
+
+    async def _test_connection_and_set_token_mfa(self, user_input):
+        api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
+        await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD], self.user_input[CONF_MFA])
         # TODO exception handling
         # except LoginFailedException as exc:
         #     raise InvalidAuth from exc
@@ -114,6 +129,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Check if config is valid and create entry if so."""
 
         self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+        # self._user_input[CONF_MFA] = user_input[CONF_MFA]
 
 
         extra_inputs = user_input
@@ -129,6 +145,8 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             # test the connection and set the token
             await self._test_connection_and_set_token()
+        except RequireMFAException:
+            await self._test_connection_and_set_token_mfa()
         except Exception as ex:
             logger.exception(ex)
             return self.async_show_form(
@@ -160,16 +178,16 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self._validate_and_create_entry(user_input, "user")
 
-    async def async_step_mfa(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step."""
-        errors: dict[str, str] = {}
+    # async def async_step_mfa(
+    #     self, user_input: dict[str, Any] | None = None
+    # ) -> FlowResult:
+    #     """Handle the initial step."""
+    #     errors: dict[str, str] = {}
 
-        if user_input is None:
-            return self._show_setup_form(user_input, errors)
+    #     if user_input is None:
+    #         return self._show_setup_form(user_input, errors)
 
-        return await self._validate_and_create_entry(user_input, "mfa")
+    #     return await self._validate_and_create_entry(user_input, "mfa")
 
     async def async_step_reauth(self, entry_data) -> FlowResult:
         """Handle configuration by re-auth."""
