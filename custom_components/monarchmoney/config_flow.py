@@ -125,7 +125,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders=self._description_placeholders,
         )
 
-    async def _validate_and_create_entry(self, user_input, step_id="user"):
+    async def _validate_and_create_entry(self, user_input, step_id):
         """Check if config is valid and create entry if so."""
 
         self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
