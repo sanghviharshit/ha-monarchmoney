@@ -78,7 +78,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         else:
             return vol.Schema({vol.Required(CONF_PASSWORD): str})
 
-    async def _test_connection_and_set_token(self, user_input):
+    async def _test_connection_and_set_token(self):
         api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
         await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
         # TODO exception handling
@@ -95,9 +95,9 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         api.save_session(filename=self.hass.config.path(SESSION_FILE))
         # self._user_input["api"] = api
 
-    async def _test_connection_and_set_token_mfa(self, user_input):
+    async def _test_connection_and_set_token_mfa(self):
         api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
-        await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD], self.user_input[CONF_MFA])
+        await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD], self._user_input[CONF_MFA])
         # TODO exception handling
         # except LoginFailedException as exc:
         #     raise InvalidAuth from exc
@@ -146,6 +146,12 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # test the connection and set the token
             await self._test_connection_and_set_token()
         except RequireMFAException:
+            await self.async_show_form(
+                step_id="mfa",
+                data_schema=self._get_schema(step_id),
+                errors=None,
+                description_placeholders=self._description_placeholders,
+            )
             await self._test_connection_and_set_token_mfa()
         except Exception as ex:
             logger.exception(ex)
