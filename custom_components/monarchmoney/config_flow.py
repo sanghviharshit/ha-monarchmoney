@@ -152,7 +152,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle configuration by re-auth."""
         await self.async_set_unique_id(entry_data[CONF_EMAIL])
         self._existing_entry = {**entry_data}
-        self._description_placeholders = {CONF_EMAIL: entry_data[CONF_EMAIL]}
+        self._description_placeholders = {CONF_EMAIL: entry_data[CONF_EMAIL], CONF_PASSWORD: entry_data[CONF_PASSWORD]}
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
