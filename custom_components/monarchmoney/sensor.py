@@ -460,14 +460,14 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
         cashflow = update_data.get("cashflow")
         for c in cashflow.get("byCategory"):
             if c.get("groupBy").get("category").get("group").get("type") == "expense":
-                expense_cats[c.get("groupBy").get("category").get("name")] += c.get(
+                expense_cats[c.get("groupBy").get("category").get("name")] += -1 * c.get(
                     "summary"
                 ).get("sum")
 
 
         c = cashflow.get("summary")[0]
 
-        self._state = c.get("summary").get("sumExpense")
+        self._state = -1 * c.get("summary").get("sumExpense")
         self._expense_cats = expense_cats
 
         self.async_write_ha_state()
