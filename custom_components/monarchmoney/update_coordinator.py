@@ -88,18 +88,28 @@ class MonarchCoordinator(DataUpdateCoordinator):
         so entities can quickly look up their data.
         """
         try:
-            data = {}
+            data = {
+                "accounts": {},
+                "categories": {},
+                "cashflow": {}
+            }
 
             # Note: asyncio.TimeoutError and aiohttp.ClientError are already
             # handled by the data update coordinator.
+            # TODO: configure timeout from config options
             async with async_timeout.timeout(10):
                 # Grab active context variables to limit data required to be fetched from API
                 # Note: using context is not required if there is no need or ability to limit
                 # data retrieved from API.
                 try:
-                    data = await self._api.get_accounts()
+                    accounts = await self._api.get_accounts()
+                    data["accounts"] = accounts.get("accounts")
+                    categories = await self._api.get_transaction_categories()
+                    data["categories"] = categories.get("categories")
+                    cashflow = await self._api.get_cashflow()
+                    data["cashflow"] = cashflow
                 except Exception as err:
-                    raise ConfigEntryAuthFailed from err
+                    raise err
                 return data
         except ConfigEntryAuthFailed as err:
             # Raising ConfigEntryAuthFailed will cancel future updates
