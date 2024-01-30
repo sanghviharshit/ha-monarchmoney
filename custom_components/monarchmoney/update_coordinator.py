@@ -97,7 +97,7 @@ class MonarchCoordinator(DataUpdateCoordinator):
             # Note: asyncio.TimeoutError and aiohttp.ClientError are already
             # handled by the data update coordinator.
             # TODO: configure timeout from config options
-            async with async_timeout.timeout(1800):
+            async with async_timeout.timeout(10):
                 # Grab active context variables to limit data required to be fetched from API
                 # Note: using context is not required if there is no need or ability to limit
                 # data retrieved from API.
