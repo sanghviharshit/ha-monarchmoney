@@ -256,7 +256,7 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
-        attributes = {"Assets": self._assets, "Liabilities": self._liabilities}
+        attributes = {"assets": self._assets, "liabilities": self._liabilities}
         return attributes
 
     @property
@@ -324,10 +324,10 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
         attributes = {
-            "Income": self._income,
-            "Expense": self._expenses,
-            "Savings": self._savings,
-            "Savings Rate": self._savings_rate,
+            "income": self._income,
+            "expense": self._expenses,
+            "savings": self._savings,
+            "savings_rate": self._savings_rate,
         }
         return attributes
 
