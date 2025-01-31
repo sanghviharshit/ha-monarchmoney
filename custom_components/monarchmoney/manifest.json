@@ -13,9 +13,9 @@
   "issue_tracker": "https://github.com/sanghviharshit/ha-monarchmoney/issues",
   "quality_scale": "silver",
   "requirements": [
-    "monarchmoney==0.1.11"
+    "monarchmoney==0.1.15"
   ],
   "ssdp": [],
-  "version": "0.0.1",
+  "version": "0.0.4",
   "zeroconf": []
 }
