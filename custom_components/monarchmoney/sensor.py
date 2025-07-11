@@ -1,4 +1,5 @@
 """Sensor Platform"""
+
 import logging
 from .util import format_date
 
@@ -105,8 +106,8 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator, context=category)
         self._account_type = SENSOR_TYPES_GROUP[category]["type"]
         # self._account_group = SENSOR_TYPES_GROUP[category]["group"]
-        self._name = f"Monarch { category }"
-        self._state = None
+        self._name = f"Monarch {category}"
+        self._state = None  # Keep None for initial state to show "Unknown"
         self._account_data = {}
         self._id = unique_id
         self._attr_icon = SENSOR_TYPES_GROUP[category]["icon"]
@@ -122,26 +123,66 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self._state
 
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        # Simple check: available if we have coordinator data
+        return self.coordinator.data is not None
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Ensure we get an initial update if coordinator already has data
+        if self.coordinator.data is not None:
+            _LOGGER.debug(f"Forcing initial update for {self._name}")
+            self._handle_coordinator_update()
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         update_data = self.coordinator.data
 
+        _LOGGER.debug(f"Updating sensor: {self._name}")
+        _LOGGER.debug(f"Looking for account type: {self._account_type}")
+        _LOGGER.debug(
+            f"Coordinator data keys: {list(update_data.keys()) if update_data else 'None'}"
+        )
+
         accounts = update_data.get("accounts")
+
+        _LOGGER.debug(
+            f"Total accounts found: {len(accounts) if isinstance(accounts, list) else 'Not a list'}"
+        )
 
         self._account_data = {}
 
         sensor_type_accounts = [
             account
             for account in accounts
-            if account.get("type").get("name") == self._account_type
+            if account.get("type", {}).get("name") == self._account_type
         ]
+
+        _LOGGER.debug(
+            f"Matching accounts for {self._account_type}: {len(sensor_type_accounts)}"
+        )
+
+        if not sensor_type_accounts:
+            _LOGGER.debug(
+                f"No accounts found for type '{self._account_type}' in {self._name}"
+            )
+            # Log available account types for debugging
+            available_types = [
+                account.get("type", {}).get("name")
+                for account in accounts
+                if account.get("type")
+            ]
+            _LOGGER.debug(f"Available account types: {set(available_types)}")
 
         for account in sensor_type_accounts:
             institution = None
             try:
                 institution = (
-                    account.get("credential").get("institution").get("name", "")
+                    account.get("credential", {}).get("institution", {}).get("name", "")
                 )
             except AttributeError:
                 pass
@@ -150,17 +191,25 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
                 "id": account.get("id", ""),
                 "name": account.get("displayName", ""),
                 "balance": account.get("displayBalance", ""),
-                "account_type": account.get("type").get("name", ""),
+                "account_type": account.get("type", {}).get("name", ""),
                 "updated": format_date(account.get("updatedAt", "")),
                 "institution": institution,
             }
 
-        sensor_type_accounts_sum = round(
-            sum(
-                sensor_type_account["displayBalance"]
-                for sensor_type_account in sensor_type_accounts
+        try:
+            sensor_type_accounts_sum = round(
+                sum(
+                    sensor_type_account["displayBalance"]
+                    for sensor_type_account in sensor_type_accounts
+                    if sensor_type_account.get("displayBalance") is not None
+                )
             )
-        )
+            _LOGGER.debug(
+                f"Calculated sum for {self._name}: {sensor_type_accounts_sum}"
+            )
+        except (TypeError, ValueError) as err:
+            _LOGGER.error(f"Error calculating sum for {self._name}: {err}")
+            sensor_type_accounts_sum = 0
 
         self._state = sensor_type_accounts_sum
 
@@ -220,7 +269,9 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
         update_data = self.coordinator.data
         accounts = update_data.get("accounts")
         active_accounts = [
-            account for account in accounts if account["includeInNetWorth"] is True and account["isHidden"] is False
+            account
+            for account in accounts
+            if account["includeInNetWorth"] is True and account["isHidden"] is False
         ]
 
         asset_accounts = [
@@ -460,10 +511,9 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
         cashflow = update_data.get("cashflow")
         for c in cashflow.get("byCategory"):
             if c.get("groupBy").get("category").get("group").get("type") == "expense":
-                expense_cats[c.get("groupBy").get("category").get("name")] += -1 * c.get(
-                    "summary"
-                ).get("sum")
-
+                expense_cats[c.get("groupBy").get("category").get("name")] += (
+                    -1 * c.get("summary").get("sum")
+                )
 
         c = cashflow.get("summary")[0]
 

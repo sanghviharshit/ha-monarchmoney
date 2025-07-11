@@ -33,7 +33,7 @@ class MonarchCoordinator(DataUpdateCoordinator):
         self._hass = hass
         self._config_entry = config_entry
         self._api = MonarchMoney(session_file=self._hass.config.path(SESSION_FILE))
-        self._api.load_session(filename=self._hass.config.path(SESSION_FILE))
+        # Session loading moved to async_setup to avoid blocking I/O in event loop
 
         options = config_entry.options
         self._update_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -52,16 +52,19 @@ class MonarchCoordinator(DataUpdateCoordinator):
         """Setup a new coordinator"""
         _LOGGER.debug("Setting up coordinator")
 
+        _LOGGER.debug("Loading session")
+        # Load session in executor to avoid blocking I/O in event loop
+        await self.hass.async_add_executor_job(
+            self._api.load_session, self._hass.config.path(SESSION_FILE)
+        )
+
         _LOGGER.debug("Getting first refresh")
         await self.async_config_entry_first_refresh()
 
         _LOGGER.debug("Forwarding setup to platforms")
-        for component in PLATFORMS:
-            self.hass.async_create_task(
-                self.hass.config_entries.async_forward_entry_setup(
-                    self._config_entry, component
-                )
-            )
+        await self.hass.config_entries.async_forward_entry_setups(
+            self._config_entry, PLATFORMS
+        )
 
         return True
 
@@ -88,11 +91,7 @@ class MonarchCoordinator(DataUpdateCoordinator):
         so entities can quickly look up their data.
         """
         try:
-            data = {
-                "accounts": {},
-                "categories": {},
-                "cashflow": {}
-            }
+            data = {"accounts": [], "categories": [], "cashflow": {}}
 
             # Note: asyncio.TimeoutError and aiohttp.ClientError are already
             # handled by the data update coordinator.
@@ -103,12 +102,30 @@ class MonarchCoordinator(DataUpdateCoordinator):
                 # data retrieved from API.
                 try:
                     accounts = await self._api.get_accounts()
-                    data["accounts"] = accounts.get("accounts")
+                    data["accounts"] = accounts.get("accounts") or []
+                    _LOGGER.debug(f"Fetched {len(data['accounts'])} accounts from API")
+
                     categories = await self._api.get_transaction_categories()
-                    data["categories"] = categories.get("categories")
+                    data["categories"] = categories.get("categories") or []
+                    _LOGGER.debug(
+                        f"Fetched {len(data['categories'])} categories from API"
+                    )
+
                     cashflow = await self._api.get_cashflow()
-                    data["cashflow"] = cashflow
+                    data["cashflow"] = cashflow or {}
+                    _LOGGER.debug(f"Fetched cashflow data: {bool(data['cashflow'])}")
+
+                    # Debug: log account types for troubleshooting
+                    if data["accounts"]:
+                        account_types = [
+                            acc.get("type", {}).get("name")
+                            for acc in data["accounts"]
+                            if acc.get("type")
+                        ]
+                        _LOGGER.debug(f"Account types found: {set(account_types)}")
+
                 except Exception as err:
+                    _LOGGER.error(f"Error fetching data from Monarch API: {err}")
                     raise err
                 return data
         except ConfigEntryAuthFailed as err:
