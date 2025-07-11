@@ -1,38 +1,52 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "Account already configured",
-            "reauth_successful": "Reauthentication was successful!"
-        },
-        "error": {
-            "cannot_connect": "Cannot connect",
-            "invalid_auth": "Invalid login",
-            "unknown": "Unknown error occured"
-        },
-        "step": {
-            "reauth_confirm": {
-                "data": {
-                    "email": "Email",
-                    "password": "Password"
-                },
-                "description": "Authentication tokens became invalid, login to recreate them."
-            },
-            "user": {
-                "data": {
-                    "email": "Email",
-                    "password": "Password"
-                }
-            }
-        }
+  "config": {
+    "abort": {
+      "already_configured": "Account already configured",
+      "reauth_successful": "Reauthentication was successful!"
     },
-    "options": {
-        "step": {
-            "init": {
-                "data": {
-                    "scan_interval": "Scan Interval",
-                    "timeout": "Timeout"
-                }
-            }
+    "error": {
+      "cannot_connect": "Cannot connect",
+      "invalid_auth": "Invalid login",
+      "unknown": "Unknown error occured"
+    },
+    "step": {
+      "reauth_confirm": {
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "description": "Authentication tokens became invalid, login to recreate them."
+      },
+      "user": {
+        "data": {
+          "email": "Email",
+          "password": "Password"
         }
+      },
+      "mfa": {
+        "data": {
+          "mfa_code": "MFA Code"
+        },
+        "description": "Enter the multi-factor authentication code from your authenticator app."
+      },
+      "mfa_setup": {
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "mfa_secret": "MFA Secret Key (Optional)"
+        },
+        "description": "Set up Monarch Money with optional MFA secret key for automatic authentication. The MFA secret key can be found when setting up MFA in Monarch Money (Settings -> Security -> Enable MFA)."
+      }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Scan Interval",
+          "timeout": "Timeout"
+        }
+      }
+    }
+  }
 }
