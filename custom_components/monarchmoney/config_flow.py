@@ -1,19 +1,17 @@
 """Config flow for Monarch Money integration."""
+
 from __future__ import annotations
+
 import logging
+from typing import Any
 
 import voluptuous as vol
 
-from typing import Any, Optional
-from asyncio.log import logger
-from homeassistant.config_entries import (
-    ConfigEntry,
-    OptionsFlow,
-)
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
+from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
-from homeassistant.const import CONF_SCAN_INTERVAL, CONF_EMAIL, CONF_PASSWORD
+from homeassistant.exceptions import HomeAssistantError
 from monarchmoney import MonarchMoney
 
 from .const import (
@@ -21,17 +19,26 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
+    SESSION_FILE,
     VALUES_SCAN_INTERVAL,
     VALUES_TIMEOUT,
-    SESSION_FILE,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
+
+class CannotConnect(HomeAssistantError):
+    """Error to indicate we cannot connect."""
+
+
+class InvalidAuth(HomeAssistantError):
+    """Error to indicate there is invalid auth."""
+
+
 CREDENTIALS_SCHEMA = vol.Schema(
     {
-        vol.Required("email"): str,
-        vol.Required("password"): str,
+        vol.Required(CONF_EMAIL): str,
+        vol.Required(CONF_PASSWORD): str,
     }
 )
 
@@ -49,46 +56,45 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Monarch Money."""
 
     VERSION = 1
-    DOMAIN = DOMAIN
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     def __init__(self) -> None:
-        self._existing_entry = None
-        self._user_input = {}
-        self._description_placeholders = None
-        super().__init__()
+        """Initialize the config flow."""
+        self._existing_entry: dict[str, Any] | None = None
+        self._user_input: dict[str, Any] = {}
+        self._description_placeholders: dict[str, str] | None = None
 
-    @property
-    def logger(self) -> logging.Logger:
-        """Return logger."""
-        return logging.getLogger(__name__)
-
-    def _get_schema(self, step_id: str):
+    def _get_schema(self, step_id: str) -> vol.Schema:
+        """Get the schema for the given step."""
         if step_id == "user":
             return CREDENTIALS_SCHEMA
-        else:
-            return vol.Schema({vol.Required(CONF_PASSWORD): str})
+        return vol.Schema({vol.Required(CONF_PASSWORD): str})
 
-    async def _test_connection_and_set_token(self):
-        api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
-        await api.login(self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD])
-        # TODO exception handling
-        # except LoginFailedException as exc:
-        #     raise InvalidAuth from exc
-        # If you cannot connect:
-        # throw CannotConnect
+    async def _test_connection_and_set_token(self) -> None:
+        """Test connection and save session token."""
+        try:
+            api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
+            await api.login(
+                self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD]
+            )
 
-        # try to get account information, if we do, we're good
-        # await api.get_account()
-        self.logger.info("Successfully authenticated")
+            # Test API access by getting account information
+            await api.get_accounts()
+            _LOGGER.info("Successfully authenticated with Monarch Money")
 
-        # set the token to the one just obtained
-        api.save_session(filename=self.hass.config.path(SESSION_FILE))
-        # self._user_input["api"] = api
+            # Save the session token
+            api.save_session(filename=self.hass.config.path(SESSION_FILE))
 
-    def _show_setup_form(self, user_input=None, errors=None, step_id="user"):
+        except Exception as exc:
+            _LOGGER.exception("Failed to authenticate with Monarch Money")
+            raise InvalidAuth from exc
+
+    def _show_setup_form(
+        self,
+        user_input: dict[str, Any] | None = None,
+        errors: dict[str, str] | None = None,
+        step_id: str = "user",
+    ) -> ConfigFlowResult:
         """Show the setup form to the user."""
-
         if user_input is None:
             user_input = {}
 
@@ -99,13 +105,13 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders=self._description_placeholders,
         )
 
-    async def _validate_and_create_entry(self, user_input, step_id):
+    async def _validate_and_create_entry(
+        self, user_input: dict[str, Any], step_id: str
+    ) -> ConfigFlowResult:
         """Check if config is valid and create entry if so."""
-
         self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
 
         extra_inputs = user_input
-
         if self._existing_entry:
             extra_inputs = self._existing_entry
         self._user_input[CONF_EMAIL] = extra_inputs[CONF_EMAIL]
@@ -115,49 +121,55 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
         try:
-            # test the connection and set the token
             await self._test_connection_and_set_token()
-        except Exception as ex:
-            logger.exception(ex)
+        except InvalidAuth:
             return self.async_show_form(
                 step_id=step_id,
                 data_schema=self._get_schema(step_id),
                 errors={"base": "invalid_auth"},
             )
+        except Exception:
+            _LOGGER.exception("Unexpected error during authentication")
+            return self.async_show_form(
+                step_id=step_id,
+                data_schema=self._get_schema(step_id),
+                errors={"base": "cannot_connect"},
+            )
 
         if step_id == "user":
-            # if we didn't have an entry, create one
             return self.async_create_entry(
                 title=self._user_input[CONF_EMAIL], data=self._user_input
             )
 
-        # if we have an entry, assume that we want to update it (treat as re-auth)
+        # Handle re-authentication
         entry = await self.async_set_unique_id(self.unique_id)
-        self.hass.config_entries.async_update_entry(entry, data=self._user_input)
-        await self.hass.config_entries.async_reload(entry.entry_id)
+        if entry:
+            self.hass.config_entries.async_update_entry(entry, data=self._user_input)
+            await self.hass.config_entries.async_reload(entry.entry_id)
         return self.async_abort(reason="reauth_successful")
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
-        errors: dict[str, str] = {}
-
         if user_input is None:
-            return self._show_setup_form(user_input, errors)
+            return self._show_setup_form()
 
         return await self._validate_and_create_entry(user_input, "user")
 
-    async def async_step_reauth(self, entry_data) -> FlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle configuration by re-auth."""
         await self.async_set_unique_id(entry_data[CONF_EMAIL])
         self._existing_entry = {**entry_data}
-        self._description_placeholders = {CONF_EMAIL: entry_data[CONF_EMAIL], CONF_PASSWORD: entry_data[CONF_PASSWORD]}
+        self._description_placeholders = {
+            CONF_EMAIL: entry_data[CONF_EMAIL],
+            CONF_PASSWORD: entry_data[CONF_PASSWORD],
+        }
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
-        self, user_input: Optional[dict[str, str]] = None
-    ) -> FlowResult:
+        self, user_input: dict[str, str] | None = None
+    ) -> ConfigFlowResult:
         """Handle re-auth completion."""
         if user_input is None:
             return self._show_setup_form(step_id="reauth_confirm")
@@ -172,15 +184,15 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class MonarchOptionsFlowHandler(OptionsFlow):
-    """Handle an Mila options flow."""
+    """Handle Monarch Money options flow."""
 
     def __init__(self, entry: ConfigEntry) -> None:
-        """Initialize."""
+        """Initialize options flow."""
         self.entry = entry
 
     async def async_step_init(
-        self, user_input: Optional[dict[str, str]] = None
-    ) -> FlowResult:
+        self, user_input: dict[str, str] | None = None
+    ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)

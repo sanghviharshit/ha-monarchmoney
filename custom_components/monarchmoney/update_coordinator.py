@@ -1,24 +1,17 @@
-"""
-Update coordinator
-"""
+"""Update coordinator for Monarch Money integration."""
 
 import asyncio
 from datetime import timedelta
 import logging
+from typing import Any
 
-import async_timeout
-
-from homeassistant.const import (
-    CONF_SCAN_INTERVAL,
-    CONF_TIMEOUT,
-)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_SCAN_INTERVAL, CONF_TIMEOUT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from monarchmoney import MonarchMoney
+
 from .const import DEFAULT_SCAN_INTERVAL, DEFAULT_TIMEOUT, DOMAIN, SESSION_FILE
 
 PLATFORMS = ["sensor"]
@@ -26,10 +19,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class MonarchCoordinator(DataUpdateCoordinator):
-    """My custom coordinator."""
+    """Monarch Money data update coordinator."""
 
-    def __init__(self, hass: HomeAssistant, config_entry) -> None:
-        """Initialize my coordinator."""
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+        """Initialize the coordinator."""
         self._hass = hass
         self._config_entry = config_entry
         self._api = MonarchMoney(session_file=self._hass.config.path(SESSION_FILE))
@@ -48,8 +41,8 @@ class MonarchCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=self._update_interval),
         )
 
-    async def async_setup(self):
-        """Setup a new coordinator"""
+    async def async_setup(self) -> bool:
+        """Set up the coordinator."""
         _LOGGER.debug("Setting up coordinator")
 
         _LOGGER.debug("Loading session")
@@ -68,11 +61,11 @@ class MonarchCoordinator(DataUpdateCoordinator):
 
         return True
 
-    async def async_reset(self):
-        """Resets the coordinator."""
+    async def async_reset(self) -> bool:
+        """Reset the coordinator."""
         _LOGGER.debug("resetting the coordinator")
         entry = self._config_entry
-        unload_ok = all(
+        return all(
             await asyncio.gather(
                 *[
                     self.hass.config_entries.async_forward_entry_unload(
@@ -82,9 +75,8 @@ class MonarchCoordinator(DataUpdateCoordinator):
                 ]
             )
         )
-        return unload_ok
 
-    async def _async_update_data(self):
+    async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from API endpoint.
 
         This is the place to pre-process the data to lookup tables
@@ -95,8 +87,7 @@ class MonarchCoordinator(DataUpdateCoordinator):
 
             # Note: asyncio.TimeoutError and aiohttp.ClientError are already
             # handled by the data update coordinator.
-            # TODO: configure timeout from config options
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(self._timeout):
                 # Grab active context variables to limit data required to be fetched from API
                 # Note: using context is not required if there is no need or ability to limit
                 # data retrieved from API.
@@ -126,7 +117,15 @@ class MonarchCoordinator(DataUpdateCoordinator):
 
                 except Exception as err:
                     _LOGGER.error(f"Error fetching data from Monarch API: {err}")
-                    raise err
+                    # Check if it's an authentication error
+                    if (
+                        "unauthorized" in str(err).lower()
+                        or "authentication" in str(err).lower()
+                    ):
+                        raise ConfigEntryAuthFailed(
+                            f"Authentication failed: {err}"
+                        ) from err
+                    raise UpdateFailed(f"Error communicating with API: {err}") from err
                 return data
         except ConfigEntryAuthFailed as err:
             # Raising ConfigEntryAuthFailed will cancel future updates

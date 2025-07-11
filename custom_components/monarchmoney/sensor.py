@@ -1,22 +1,19 @@
-"""Sensor Platform"""
+"""Sensor platform for Monarch Money integration."""
 
+import contextlib
 import logging
-from .util import format_date
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
-
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import callback
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-
 from .const import DOMAIN
-
 from .update_coordinator import MonarchCoordinator
+from .util import format_date
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,15 +70,15 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Config entry example."""
+    """Set up Monarch Money sensors from a config entry."""
 
     coordinator: MonarchCoordinator = hass.data[DOMAIN][config_entry.entry_id]
     unique_id = config_entry.unique_id
     categories = SENSOR_TYPES_GROUP.keys()
-    sensors = []
-    for category in categories:
-        sensors.append(MonarchMoneyCategorySensor(coordinator, category, unique_id))
-
+    sensors: list[SensorEntity] = [
+        MonarchMoneyCategorySensor(coordinator, category, unique_id)
+        for category in categories
+    ]
     sensors.append(MonarchMoneyNetWorthSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyCashFlowSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyIncomeSensor(coordinator, unique_id))
@@ -91,15 +88,7 @@ async def async_setup_entry(
 
 
 class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
-    """An entity using CoordinatorEntity.
-
-    The CoordinatorEntity class provides:
-      should_poll
-      async_update
-      async_added_to_hass
-      available
-
-    """
+    """Monarch Money category sensor."""
 
     def __init__(self, coordinator, category, unique_id) -> None:
         """Pass coordinator to CoordinatorEntity."""
@@ -117,10 +106,12 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def unique_id(self) -> str:
-        return self._name.lower()
+        """Return unique ID for this sensor."""
+        return f"{DOMAIN}_{self._id}_{self._name.lower().replace(' ', '_')}"
 
     @property
     def native_value(self):
+        """Return the native value of the sensor."""
         return self._state
 
     @property
@@ -142,13 +133,17 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         update_data = self.coordinator.data
 
+        if not update_data:
+            _LOGGER.warning(f"No data available for {self._name}")
+            return
+
         _LOGGER.debug(f"Updating sensor: {self._name}")
         _LOGGER.debug(f"Looking for account type: {self._account_type}")
         _LOGGER.debug(
             f"Coordinator data keys: {list(update_data.keys()) if update_data else 'None'}"
         )
 
-        accounts = update_data.get("accounts")
+        accounts = update_data.get("accounts", [])
 
         _LOGGER.debug(
             f"Total accounts found: {len(accounts) if isinstance(accounts, list) else 'Not a list'}"
@@ -180,12 +175,10 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
 
         for account in sensor_type_accounts:
             institution = None
-            try:
+            with contextlib.suppress(AttributeError):
                 institution = (
                     account.get("credential", {}).get("institution", {}).get("name", "")
                 )
-            except AttributeError:
-                pass
 
             self._account_data[account.get("id", "")] = {
                 "id": account.get("id", ""),
@@ -229,13 +222,11 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self._id)
-            },
-            name=self._id,
-            manufacturer=DOMAIN,
-            via_device=(DOMAIN, self._id),
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
+            sw_version="1.0",
         )
 
 
@@ -257,17 +248,24 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def unique_id(self) -> str:
-        return self._name.lower()
+        """Return unique ID for this sensor."""
+        return f"{DOMAIN}_{self._id}_net_worth"
 
     @property
     def native_value(self):
+        """Return the native value of the sensor."""
         return self._state
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         update_data = self.coordinator.data
-        accounts = update_data.get("accounts")
+
+        if not update_data:
+            _LOGGER.warning(f"No data available for {self._name}")
+            return
+
+        accounts = update_data.get("accounts", [])
         active_accounts = [
             account
             for account in accounts
@@ -307,8 +305,7 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
-        attributes = {"assets": self._assets, "liabilities": self._liabilities}
-        return attributes
+        return {"assets": self._assets, "liabilities": self._liabilities}
 
     @property
     def name(self):
@@ -319,13 +316,11 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self._id)
-            },
-            name=self._id,
-            manufacturer=DOMAIN,
-            via_device=(DOMAIN, self._id),
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
+            sw_version="1.0",
         )
 
 
@@ -349,17 +344,24 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def unique_id(self) -> str:
-        return self._name.lower()
+        """Return unique ID for this sensor."""
+        return f"{DOMAIN}_{self._id}_cash_flow"
 
     @property
     def native_value(self):
+        """Return the native value of the sensor."""
         return self._state
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         update_data = self.coordinator.data
-        cashflow = update_data.get("cashflow")
+
+        if not update_data:
+            _LOGGER.warning(f"No data available for {self._name}")
+            return
+
+        cashflow = update_data.get("cashflow", {})
 
         c = cashflow.get("summary")[0]
 
@@ -374,13 +376,12 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
-        attributes = {
+        return {
             "income": self._income,
             "expense": self._expenses,
             "savings": self._savings,
             "savings_rate": self._savings_rate,
         }
-        return attributes
 
     @property
     def name(self):
@@ -391,13 +392,11 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self._id)
-            },
-            name=self._id,
-            manufacturer=DOMAIN,
-            via_device=(DOMAIN, self._id),
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
+            sw_version="1.0",
         )
 
 
@@ -419,10 +418,12 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def unique_id(self) -> str:
-        return self._name.lower()
+        """Return unique ID for this sensor."""
+        return f"{DOMAIN}_{self._id}_income"
 
     @property
     def native_value(self):
+        """Return the native value of the sensor."""
         return self._state
 
     @callback
@@ -430,19 +431,19 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         update_data = self.coordinator.data
 
-        income_cats = dict()
-        for c in update_data.get("categories"):
+        income_cats = {}
+        for c in update_data.get("categories", []):
             if c.get("group").get("type") == "income":
                 income_cats[c.get("name")] = 0.0
 
-        cashflow = update_data.get("cashflow")
-        for c in cashflow.get("byCategory"):
+        cashflow = update_data.get("cashflow", {})
+        for c in cashflow.get("byCategory", []):
             if c.get("groupBy").get("category").get("group").get("type") == "income":
                 income_cats[c.get("groupBy").get("category").get("name")] += c.get(
                     "summary"
                 ).get("sum")
 
-        c = cashflow.get("summary")[0]
+        c = cashflow.get("summary", [{}])[0]
 
         self._state = c.get("summary").get("sumIncome")
         self._income_cats = income_cats
@@ -452,8 +453,7 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
-        attributes = {"categories": self._income_cats}
-        return attributes
+        return {"categories": self._income_cats}
 
     @property
     def name(self):
@@ -492,10 +492,12 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def unique_id(self) -> str:
-        return self._name.lower()
+        """Return unique ID for this sensor."""
+        return f"{DOMAIN}_{self._id}_expense"
 
     @property
     def native_value(self):
+        """Return the native value of the sensor."""
         return self._state
 
     @callback
@@ -503,19 +505,19 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         update_data = self.coordinator.data
 
-        expense_cats = dict()
-        for c in update_data.get("categories"):
+        expense_cats = {}
+        for c in update_data.get("categories", []):
             if c.get("group").get("type") == "expense":
                 expense_cats[c.get("name")] = 0.0
 
-        cashflow = update_data.get("cashflow")
-        for c in cashflow.get("byCategory"):
+        cashflow = update_data.get("cashflow", {})
+        for c in cashflow.get("byCategory", []):
             if c.get("groupBy").get("category").get("group").get("type") == "expense":
                 expense_cats[c.get("groupBy").get("category").get("name")] += (
                     -1 * c.get("summary").get("sum")
                 )
 
-        c = cashflow.get("summary")[0]
+        c = cashflow.get("summary", [{}])[0]
 
         self._state = -1 * c.get("summary").get("sumExpense")
         self._expense_cats = expense_cats
@@ -525,8 +527,7 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
-        attributes = {"categories": self._expense_cats}
-        return attributes
+        return {"categories": self._expense_cats}
 
     @property
     def name(self):

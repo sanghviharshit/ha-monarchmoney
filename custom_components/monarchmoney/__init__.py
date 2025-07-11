@@ -1,8 +1,10 @@
 """The Monarch Money integration."""
+
 from __future__ import annotations
+
 import logging
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
@@ -24,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     coordinator: MonarchCoordinator = hass.data[DOMAIN][entry.entry_id]
     ok = await coordinator.async_reset()
@@ -34,6 +36,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     return ok
 
 
-async def async_update_options(hass: HomeAssistant, config_entry: ConfigEntry):
+async def async_update_options(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Update options."""
     await hass.config_entries.async_reload(config_entry.entry_id)
