@@ -6,6 +6,8 @@ ATTRIBUTION = "Data provided by Monarch"
 SESSION_FILE = ".mm-session.pickle"
 
 CONF_TIMEOUT = "timeout"
+CONF_MFA_CODE = "mfa_code"
+CONF_MFA_SECRET = "mfa_secret"
 
 VALUES_SCAN_INTERVAL = [60, 120, 600, 1800, 3600, 21600, 86400]
 VALUES_TIMEOUT = [10, 15, 30, 45, 60]

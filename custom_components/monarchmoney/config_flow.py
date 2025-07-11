@@ -12,9 +12,11 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsF
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
-from monarchmoney import MonarchMoney
+from monarchmoney import MonarchMoney, RequireMFAException
 
 from .const import (
+    CONF_MFA_CODE,
+    CONF_MFA_SECRET,
     CONF_TIMEOUT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
@@ -35,10 +37,28 @@ class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
 
 
+class RequireMFA(HomeAssistantError):
+    """Error to indicate MFA is required."""
+
+
 CREDENTIALS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_EMAIL): str,
         vol.Required(CONF_PASSWORD): str,
+    }
+)
+
+MFA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_MFA_CODE): str,
+    }
+)
+
+MFA_SETUP_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_EMAIL): str,
+        vol.Required(CONF_PASSWORD): str,
+        vol.Optional(CONF_MFA_SECRET): str,
     }
 )
 
@@ -67,25 +87,101 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the schema for the given step."""
         if step_id == "user":
             return CREDENTIALS_SCHEMA
+        elif step_id == "mfa":
+            return MFA_SCHEMA
+        elif step_id == "mfa_setup":
+            return MFA_SETUP_SCHEMA
         return vol.Schema({vol.Required(CONF_PASSWORD): str})
 
     async def _test_connection_and_set_token(self) -> None:
         """Test connection and save session token."""
-        try:
-            api = MonarchMoney(session_file=self.hass.config.path(SESSION_FILE))
-            await api.login(
-                self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD]
-            )
+        session_file_path = self.hass.config.path(SESSION_FILE)
+        api = MonarchMoney()
 
+        try:
+            # Try login with MFA secret if provided
+            if CONF_MFA_SECRET in self._user_input:
+                await api.login(
+                    email=self._user_input[CONF_EMAIL],
+                    password=self._user_input[CONF_PASSWORD],
+                    save_session=False,
+                    use_saved_session=False,
+                    mfa_secret_key=self._user_input[CONF_MFA_SECRET],
+                )
+            else:
+                await api.login(
+                    self._user_input[CONF_EMAIL], self._user_input[CONF_PASSWORD]
+                )
+        except RequireMFAException:
+            _LOGGER.info(
+                "MFA required for Monarch Money authentication (caught during login)"
+            )
+            raise RequireMFA
+        except Exception as exc:
+            _LOGGER.exception("Failed to login to Monarch Money")
+            # Check if this is an MFA-related error by examining the error message
+            error_str = str(exc).lower()
+            if (
+                "401" in error_str
+                or "unauthorized" in error_str
+                or "mfa" in error_str
+                or "multi-factor" in error_str
+                or "authentication" in error_str
+            ):
+                _LOGGER.info("Detected possible MFA requirement from login error")
+                raise RequireMFA
+            raise InvalidAuth from exc
+
+        try:
             # Test API access by getting account information
             await api.get_accounts()
             _LOGGER.info("Successfully authenticated with Monarch Money")
 
-            # Save the session token
-            api.save_session(filename=self.hass.config.path(SESSION_FILE))
+            # Save the session token using executor to avoid blocking I/O
+            await self.hass.async_add_executor_job(api.save_session, session_file_path)
+
+        except RequireMFAException:
+            _LOGGER.info(
+                "MFA required for Monarch Money authentication (caught during API call)"
+            )
+            raise RequireMFA
+        except Exception as exc:
+            _LOGGER.exception("Failed to access Monarch Money API after login")
+
+            # Check if this is an MFA-related error by examining the error message
+            error_str = str(exc).lower()
+            if (
+                "401" in error_str
+                or "unauthorized" in error_str
+                or "mfa" in error_str
+                or "multi-factor" in error_str
+                or "authentication" in error_str
+            ):
+                _LOGGER.info("Detected possible MFA requirement from API access error")
+                raise RequireMFA
+
+            raise InvalidAuth from exc
+
+    async def _test_mfa_and_set_token(self) -> None:
+        """Test MFA code and save session token."""
+        session_file_path = self.hass.config.path(SESSION_FILE)
+        try:
+            api = MonarchMoney()
+            await api.multi_factor_authenticate(
+                self._user_input[CONF_EMAIL],
+                self._user_input[CONF_PASSWORD],
+                self._user_input[CONF_MFA_CODE],
+            )
+
+            # Test API access by getting account information
+            await api.get_accounts()
+            _LOGGER.info("Successfully authenticated with Monarch Money using MFA")
+
+            # Save the session token using executor to avoid blocking I/O
+            await self.hass.async_add_executor_job(api.save_session, session_file_path)
 
         except Exception as exc:
-            _LOGGER.exception("Failed to authenticate with Monarch Money")
+            _LOGGER.exception("Failed to authenticate with Monarch Money using MFA")
             raise InvalidAuth from exc
 
     def _show_setup_form(
@@ -109,19 +205,32 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any], step_id: str
     ) -> ConfigFlowResult:
         """Check if config is valid and create entry if so."""
-        self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+        if step_id == "mfa":
+            self._user_input[CONF_MFA_CODE] = user_input[CONF_MFA_CODE]
+        elif step_id == "mfa_setup":
+            self._user_input[CONF_EMAIL] = user_input[CONF_EMAIL]
+            self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+            if CONF_MFA_SECRET in user_input:
+                self._user_input[CONF_MFA_SECRET] = user_input[CONF_MFA_SECRET]
+        else:
+            self._user_input[CONF_PASSWORD] = user_input[CONF_PASSWORD]
 
-        extra_inputs = user_input
-        if self._existing_entry:
-            extra_inputs = self._existing_entry
-        self._user_input[CONF_EMAIL] = extra_inputs[CONF_EMAIL]
+            extra_inputs = user_input
+            if self._existing_entry:
+                extra_inputs = self._existing_entry
+            self._user_input[CONF_EMAIL] = extra_inputs[CONF_EMAIL]
 
         if self.unique_id is None:
             await self.async_set_unique_id(self._user_input[CONF_EMAIL])
             self._abort_if_unique_id_configured()
 
         try:
-            await self._test_connection_and_set_token()
+            if step_id == "mfa":
+                await self._test_mfa_and_set_token()
+            else:
+                await self._test_connection_and_set_token()
+        except RequireMFA:
+            return await self.async_step_mfa()
         except InvalidAuth:
             return self.async_show_form(
                 step_id=step_id,
@@ -136,7 +245,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors={"base": "cannot_connect"},
             )
 
-        if step_id == "user":
+        if step_id in ("user", "mfa", "mfa_setup"):
             return self.async_create_entry(
                 title=self._user_input[CONF_EMAIL], data=self._user_input
             )
@@ -156,6 +265,24 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self._show_setup_form()
 
         return await self._validate_and_create_entry(user_input, "user")
+
+    async def async_step_mfa(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle MFA step."""
+        if user_input is None:
+            return self._show_setup_form(step_id="mfa")
+
+        return await self._validate_and_create_entry(user_input, "mfa")
+
+    async def async_step_mfa_setup(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle MFA setup step with secret key."""
+        if user_input is None:
+            return self._show_setup_form(step_id="mfa_setup")
+
+        return await self._validate_and_create_entry(user_input, "mfa_setup")
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle configuration by re-auth."""

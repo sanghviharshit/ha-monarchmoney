@@ -10,7 +10,7 @@ from homeassistant.const import CONF_SCAN_INTERVAL, CONF_TIMEOUT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from monarchmoney import MonarchMoney
+from monarchmoney import MonarchMoney, RequireMFAException
 
 from .const import DEFAULT_SCAN_INTERVAL, DEFAULT_TIMEOUT, DOMAIN, SESSION_FILE
 
@@ -115,6 +115,11 @@ class MonarchCoordinator(DataUpdateCoordinator):
                         ]
                         _LOGGER.debug(f"Account types found: {set(account_types)}")
 
+                except RequireMFAException as err:
+                    _LOGGER.error("MFA required for Monarch Money authentication")
+                    raise ConfigEntryAuthFailed(
+                        "Multi-factor authentication required. Please reconfigure the integration."
+                    ) from err
                 except Exception as err:
                     _LOGGER.error(f"Error fetching data from Monarch API: {err}")
                     # Check if it's an authentication error
