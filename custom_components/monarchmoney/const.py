@@ -3,7 +3,6 @@
 DOMAIN = "monarchmoney"
 
 ATTRIBUTION = "Data provided by Monarch"
-SESSION_FILE = ".mm-session.pickle"
 
 CONF_TIMEOUT = "timeout"
 CONF_MFA_CODE = "mfa_code"
