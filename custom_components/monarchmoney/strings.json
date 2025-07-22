@@ -7,21 +7,25 @@
     "error": {
       "cannot_connect": "Cannot connect",
       "invalid_auth": "Invalid login",
+      "rate_limited": "Too many requests. Please wait a few minutes and try again.",
       "unknown": "Unknown error occured"
     },
     "step": {
       "reauth_confirm": {
         "data": {
           "email": "Email",
-          "password": "Password"
+          "password": "Password",
+          "mfa_secret": "MFA Secret Key (Optional)"
         },
-        "description": "Authentication tokens became invalid, login to recreate them."
+        "description": "Authentication tokens became invalid, login to recreate them. Optionally provide your MFA secret key to avoid future manual MFA prompts."
       },
       "user": {
         "data": {
           "email": "Email",
-          "password": "Password"
-        }
+          "password": "Password",
+          "mfa_secret": "MFA Secret Key (Optional)"
+        },
+        "description": "Enter your Monarch Money credentials. Optionally provide your MFA secret key for automatic authentication (found in Settings -> Security -> Enable MFA -> copy the 'Two-factor text code')."
       },
       "mfa": {
         "data": {
