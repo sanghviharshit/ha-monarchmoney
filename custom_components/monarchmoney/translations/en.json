@@ -8,7 +8,7 @@
       "cannot_connect": "Cannot connect",
       "invalid_auth": "Invalid login",
       "rate_limited": "Too many requests. Please wait a few minutes and try again.",
-      "unknown": "Unknown error occured"
+      "unknown": "Unknown error occurred"
     },
     "step": {
       "reauth_confirm": {

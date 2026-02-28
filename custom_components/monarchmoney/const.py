@@ -1,6 +1,10 @@
 """Constants for the Monarch Money integration."""
 
+from homeassistant.const import Platform
+
 DOMAIN = "monarchmoney"
+
+PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 ATTRIBUTION = "Data provided by Monarch"
 

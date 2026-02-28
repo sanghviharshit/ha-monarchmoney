@@ -90,12 +90,16 @@ async def async_setup_entry(
 class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
     """Monarch Money category sensor."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator, category, unique_id) -> None:
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator, context=category)
         self._account_type = SENSOR_TYPES_GROUP[category]["type"]
         # self._account_group = SENSOR_TYPES_GROUP[category]["group"]
-        self._name = f"Monarch {category}"
+        self._attr_name = category
+        old_name = f"Monarch {category}"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_{old_name.lower().replace(' ', '_')}"
         self._state = None  # Keep None for initial state to show "Unknown"
         self._account_data = {}
         self._id = unique_id
@@ -105,27 +109,16 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.TOTAL
 
     @property
-    def unique_id(self) -> str:
-        """Return unique ID for this sensor."""
-        return f"{DOMAIN}_{self._id}_{self._name.lower().replace(' ', '_')}"
-
-    @property
     def native_value(self):
         """Return the native value of the sensor."""
         return self._state
-
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        # Simple check: available if we have coordinator data
-        return self.coordinator.data is not None
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
         # Ensure we get an initial update if coordinator already has data
         if self.coordinator.data is not None:
-            _LOGGER.debug(f"Forcing initial update for {self._name}")
+            _LOGGER.debug("Forcing initial update for %s", self._attr_name)
             self._handle_coordinator_update()
 
     @callback
@@ -134,19 +127,21 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         update_data = self.coordinator.data
 
         if not update_data:
-            _LOGGER.warning(f"No data available for {self._name}")
+            _LOGGER.warning("No data available for %s", self._attr_name)
             return
 
-        _LOGGER.debug(f"Updating sensor: {self._name}")
-        _LOGGER.debug(f"Looking for account type: {self._account_type}")
+        _LOGGER.debug("Updating sensor: %s", self._attr_name)
+        _LOGGER.debug("Looking for account type: %s", self._account_type)
         _LOGGER.debug(
-            f"Coordinator data keys: {list(update_data.keys()) if update_data else 'None'}"
+            "Coordinator data keys: %s",
+            list(update_data.keys()) if update_data else "None",
         )
 
         accounts = update_data.get("accounts", [])
 
         _LOGGER.debug(
-            f"Total accounts found: {len(accounts) if isinstance(accounts, list) else 'Not a list'}"
+            "Total accounts found: %s",
+            len(accounts) if isinstance(accounts, list) else "Not a list",
         )
 
         self._account_data = {}
@@ -158,12 +153,12 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         ]
 
         _LOGGER.debug(
-            f"Matching accounts for {self._account_type}: {len(sensor_type_accounts)}"
+            "Matching accounts for %s: %d", self._account_type, len(sensor_type_accounts)
         )
 
         if not sensor_type_accounts:
             _LOGGER.debug(
-                f"No accounts found for type '{self._account_type}' in {self._name}"
+                "No accounts found for type '%s' in %s", self._account_type, self._attr_name
             )
             # Log available account types for debugging
             available_types = [
@@ -171,7 +166,7 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
                 for account in accounts
                 if account.get("type")
             ]
-            _LOGGER.debug(f"Available account types: {set(available_types)}")
+            _LOGGER.debug("Available account types: %s", set(available_types))
 
         for account in sensor_type_accounts:
             institution = None
@@ -195,13 +190,14 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
                     sensor_type_account["displayBalance"]
                     for sensor_type_account in sensor_type_accounts
                     if sensor_type_account.get("displayBalance") is not None
-                )
+                ),
+                2,
             )
             _LOGGER.debug(
-                f"Calculated sum for {self._name}: {sensor_type_accounts_sum}"
+                "Calculated sum for %s: %s", self._attr_name, sensor_type_accounts_sum
             )
         except (TypeError, ValueError) as err:
-            _LOGGER.error(f"Error calculating sum for {self._name}: {err}")
+            _LOGGER.error("Error calculating sum for %s: %s", self._attr_name, err)
             sensor_type_accounts_sum = 0
 
         self._state = sensor_type_accounts_sum
@@ -214,11 +210,6 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         return self._account_data
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
@@ -226,12 +217,13 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
             name="Monarch Money",
             manufacturer="Monarch Money",
             model="Financial Account",
-            sw_version="1.0",
         )
 
 
 class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
     """Representation of a monarchmoney.com net worth sensor."""
+
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator, unique_id) -> None:
         """Pass coordinator to CoordinatorEntity."""
@@ -239,17 +231,13 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
         self._state = None
         self._assets = None
         self._liabilities = None
-        self._name = "Monarch Net Worth"
+        self._attr_name = "Net Worth"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_net_worth"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:chart-donut"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_state_class = SensorStateClass.TOTAL
-
-    @property
-    def unique_id(self) -> str:
-        """Return unique ID for this sensor."""
-        return f"{DOMAIN}_{self._id}_net_worth"
 
     @property
     def native_value(self):
@@ -262,37 +250,43 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
         update_data = self.coordinator.data
 
         if not update_data:
-            _LOGGER.warning(f"No data available for {self._name}")
+            _LOGGER.warning("No data available for %s", self._attr_name)
             return
 
         accounts = update_data.get("accounts", [])
         active_accounts = [
             account
             for account in accounts
-            if account["includeInNetWorth"] is True and account["isHidden"] is False
+            if account.get("includeInNetWorth") is True
+            and account.get("isHidden") is False
         ]
 
         asset_accounts = [
             account
             for account in active_accounts
-            if account["isAsset"] is True
-            # and account["type"]["name"] in ASSET_ACCOUNT_TYPES
+            if account.get("isAsset") is True
         ]
         liability_accounts = [
             account
             for account in accounts
-            if account["isAsset"] is False
-            # and account["type"]["name"] in LIABILITY_ACCOUNT_TYPES
+            if account.get("isAsset") is False
         ]
 
         asset_accounts_sum = round(
-            sum(asset_account["displayBalance"] for asset_account in asset_accounts)
+            sum(
+                a.get("displayBalance", 0)
+                for a in asset_accounts
+                if a.get("displayBalance") is not None
+            ),
+            2,
         )
         liability_accounts_sum = round(
             sum(
-                liability_account["displayBalance"]
-                for liability_account in liability_accounts
-            )
+                a.get("displayBalance", 0)
+                for a in liability_accounts
+                if a.get("displayBalance") is not None
+            ),
+            2,
         )
 
         active_accounts_sum = asset_accounts_sum - liability_accounts_sum
@@ -308,11 +302,6 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
         return {"assets": self._assets, "liabilities": self._liabilities}
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
@@ -320,12 +309,13 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
             name="Monarch Money",
             manufacturer="Monarch Money",
             model="Financial Account",
-            sw_version="1.0",
         )
 
 
 class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
     """Representation of a monarchmoney.com cash flow sensor."""
+
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator, unique_id) -> None:
         """Pass coordinator to CoordinatorEntity."""
@@ -335,17 +325,13 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
         self._expenses = None
         self._savings = None
         self._savings_rate = None
-        self._name = "Monarch Cash Flow"
+        self._attr_name = "Cash Flow"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_cash_flow"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:chart-sankey-variant"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_state_class = SensorStateClass.TOTAL
-
-    @property
-    def unique_id(self) -> str:
-        """Return unique ID for this sensor."""
-        return f"{DOMAIN}_{self._id}_cash_flow"
 
     @property
     def native_value(self):
@@ -358,18 +344,24 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
         update_data = self.coordinator.data
 
         if not update_data:
-            _LOGGER.warning(f"No data available for {self._name}")
+            _LOGGER.warning("No data available for %s", self._attr_name)
             return
 
         cashflow = update_data.get("cashflow", {})
 
-        c = cashflow.get("summary")[0]
+        summary_list = cashflow.get("summary") or []
+        if not summary_list:
+            return
 
-        self._state = c.get("summary").get("savings")
-        self._income = c.get("summary").get("sumIncome")
-        self._expenses = c.get("summary").get("sumExpense")
-        self._savings = c.get("summary").get("savings")
-        self._savings_rate = c.get("summary").get("savingsRate") * 100
+        c = summary_list[0]
+        summary = c.get("summary") or {}
+
+        self._state = summary.get("savings")
+        self._income = summary.get("sumIncome")
+        self._expenses = summary.get("sumExpense")
+        self._savings = summary.get("savings")
+        savings_rate = summary.get("savingsRate")
+        self._savings_rate = savings_rate * 100 if savings_rate is not None else None
 
         self.async_write_ha_state()
 
@@ -384,11 +376,6 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
         }
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
@@ -396,30 +383,27 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
             name="Monarch Money",
             manufacturer="Monarch Money",
             model="Financial Account",
-            sw_version="1.0",
         )
 
 
 class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
     """Representation of a monarchmoney.com income sensor."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator, unique_id) -> None:
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator)
         self._state = None
         self._income = None
-        self._name = "Monarch Income"
+        self._attr_name = "Income"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_income"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:bank-plus"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_state_class = SensorStateClass.TOTAL
         self._income_cats = {}
-
-    @property
-    def unique_id(self) -> str:
-        """Return unique ID for this sensor."""
-        return f"{DOMAIN}_{self._id}_income"
 
     @property
     def native_value(self):
@@ -433,19 +417,26 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
 
         income_cats = {}
         for c in update_data.get("categories", []):
-            if c.get("group").get("type") == "income":
+            group = c.get("group") or {}
+            if group.get("type") == "income":
                 income_cats[c.get("name")] = 0.0
 
         cashflow = update_data.get("cashflow", {})
         for c in cashflow.get("byCategory", []):
-            if c.get("groupBy").get("category").get("group").get("type") == "income":
-                income_cats[c.get("groupBy").get("category").get("name")] += c.get(
-                    "summary"
-                ).get("sum")
+            group_by = c.get("groupBy") or {}
+            category = group_by.get("category") or {}
+            group = category.get("group") or {}
+            if group.get("type") == "income":
+                cat_name = category.get("name")
+                cat_summary = c.get("summary") or {}
+                if cat_name in income_cats:
+                    income_cats[cat_name] += cat_summary.get("sum", 0)
 
-        c = cashflow.get("summary", [{}])[0]
+        summary_list = cashflow.get("summary") or [{}]
+        c = summary_list[0]
+        summary = c.get("summary") or {}
 
-        self._state = c.get("summary").get("sumIncome")
+        self._state = summary.get("sumIncome")
         self._income_cats = income_cats
 
         self.async_write_ha_state()
@@ -456,44 +447,34 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
         return {"categories": self._income_cats}
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self._id)
-            },
-            name=self._id,
-            manufacturer=DOMAIN,
-            via_device=(DOMAIN, self._id),
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
         )
 
 
 class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
     """Representation of a monarchmoney.com expense sensor."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator, unique_id) -> None:
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator)
         self._state = None
         self._income = None
-        self._name = "Monarch Expense"
+        self._attr_name = "Expenses"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_expense"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:bank-minus"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_state_class = SensorStateClass.TOTAL
         self._expense_cats = {}
-
-    @property
-    def unique_id(self) -> str:
-        """Return unique ID for this sensor."""
-        return f"{DOMAIN}_{self._id}_expense"
 
     @property
     def native_value(self):
@@ -507,19 +488,27 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
 
         expense_cats = {}
         for c in update_data.get("categories", []):
-            if c.get("group").get("type") == "expense":
+            group = c.get("group") or {}
+            if group.get("type") == "expense":
                 expense_cats[c.get("name")] = 0.0
 
         cashflow = update_data.get("cashflow", {})
         for c in cashflow.get("byCategory", []):
-            if c.get("groupBy").get("category").get("group").get("type") == "expense":
-                expense_cats[c.get("groupBy").get("category").get("name")] += (
-                    -1 * c.get("summary").get("sum")
-                )
+            group_by = c.get("groupBy") or {}
+            category = group_by.get("category") or {}
+            group = category.get("group") or {}
+            if group.get("type") == "expense":
+                cat_name = category.get("name")
+                cat_summary = c.get("summary") or {}
+                if cat_name in expense_cats:
+                    expense_cats[cat_name] += -1 * cat_summary.get("sum", 0)
 
-        c = cashflow.get("summary", [{}])[0]
+        summary_list = cashflow.get("summary") or [{}]
+        c = summary_list[0]
+        summary = c.get("summary") or {}
 
-        self._state = -1 * c.get("summary").get("sumExpense")
+        sum_expense = summary.get("sumExpense")
+        self._state = -1 * sum_expense if sum_expense is not None else None
         self._expense_cats = expense_cats
 
         self.async_write_ha_state()
@@ -530,19 +519,11 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
         return {"categories": self._expense_cats}
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self._id)
-            },
-            name=self._id,
-            manufacturer=DOMAIN,
-            via_device=(DOMAIN, self._id),
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
         )

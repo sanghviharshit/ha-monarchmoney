@@ -25,7 +25,6 @@ from .const import (
     DOMAIN,
 )
 
-PLATFORMS = ["sensor"]
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -34,8 +33,6 @@ class MonarchCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
-        self._hass = hass
-        self._config_entry = config_entry
         self._api = MonarchMoney()
         self._auth_lock = (
             asyncio.Lock()
@@ -43,7 +40,7 @@ class MonarchCoordinator(DataUpdateCoordinator):
         self._last_auth_attempt = (
             0  # Track last authentication attempt for rate limiting
         )
-        # Session loading moved to async_setup to avoid blocking I/O in event loop
+        # Session loading moved to _async_setup to avoid blocking I/O in event loop
 
         options = config_entry.options
         self._update_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -56,59 +53,36 @@ class MonarchCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             # Polling interval. Will only be polled if there are subscribers.
             update_interval=timedelta(seconds=self._update_interval),
+            config_entry=config_entry,
         )
 
-    async def async_setup(self) -> bool:
-        """Set up the coordinator."""
-        _LOGGER.debug("Setting up coordinator")
+    async def _async_setup(self) -> None:
+        """Set up session on first refresh (called automatically)."""
+        _LOGGER.debug("Setting up coordinator session")
+        mfa_secret = self.config_entry.data.get(CONF_MFA_SECRET)
         _LOGGER.debug(
-            "Config entry data keys: %s", list(self._config_entry.data.keys())
-        )
-
-        # Log whether MFA secret is available
-        mfa_secret = self._config_entry.data.get(CONF_MFA_SECRET)
-        _LOGGER.debug(
-            "MFA secret available in config: %s",
+            "MFA secret available: %s",
             bool(mfa_secret and mfa_secret.strip()),
         )
 
         # Try to load existing session first
         session_loaded = False
         try:
-            _LOGGER.debug("Loading existing session")
             await self.hass.async_add_executor_job(self._api.load_session)
-            _LOGGER.info("Session loaded successfully")
-
-            # Validate that the loaded session actually works
             if await self._validate_session():
                 _LOGGER.debug("Loaded session is valid")
                 session_loaded = True
             else:
                 _LOGGER.debug("Loaded session is invalid, will re-authenticate")
-
         except Exception as err:
             _LOGGER.debug("Failed to load existing session: %s", err)
-            # If session loading fails, we'll authenticate during first refresh
 
-        # If no valid session was loaded, try to authenticate immediately with stored credentials
         if not session_loaded:
-            _LOGGER.debug(
-                "No valid session available, attempting authentication with stored credentials"
-            )
+            _LOGGER.debug("Attempting authentication with stored credentials")
             if await self._authenticate_with_credentials():
                 _LOGGER.info("Initial authentication successful during setup")
             else:
                 _LOGGER.warning("Initial authentication failed during setup")
-
-        _LOGGER.debug("Getting first refresh")
-        await self.async_config_entry_first_refresh()
-
-        _LOGGER.debug("Forwarding setup to platforms")
-        await self.hass.config_entries.async_forward_entry_setups(
-            self._config_entry, PLATFORMS
-        )
-
-        return True
 
     async def _validate_session(self) -> bool:
         """Check if the current session is valid by making a lightweight API call."""
@@ -135,7 +109,7 @@ class MonarchCoordinator(DataUpdateCoordinator):
             self._last_auth_attempt = current_time
 
             try:
-                config_data = self._config_entry.data
+                config_data = self.config_entry.data
                 email = config_data.get(CONF_EMAIL)
                 password = config_data.get(CONF_PASSWORD)
 
@@ -199,50 +173,39 @@ class MonarchCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Failed to authenticate with stored credentials: %s", err)
                 return False
 
-    async def async_reset(self) -> bool:
-        """Reset the coordinator."""
-        _LOGGER.debug("resetting the coordinator")
-        entry = self._config_entry
-        return all(
-            await asyncio.gather(
-                *[
-                    self.hass.config_entries.async_forward_entry_unload(
-                        entry, component
-                    )
-                    for component in PLATFORMS
-                ]
-            )
+    async def _fetch_api_data(self) -> dict[str, Any]:
+        """Fetch all data sets from the Monarch API."""
+        data: dict[str, Any] = {"accounts": [], "categories": [], "cashflow": {}}
+
+        accounts = await self._api.get_accounts()
+        data["accounts"] = accounts.get("accounts") or []
+        _LOGGER.debug("Fetched %d accounts from API", len(data["accounts"]))
+
+        categories = await self._api.get_transaction_categories()
+        data["categories"] = categories.get("categories") or []
+        _LOGGER.debug("Fetched %d categories from API", len(data["categories"]))
+
+        cashflow = await self._api.get_cashflow()
+        data["cashflow"] = cashflow or {}
+        _LOGGER.debug("Fetched cashflow data: %s", bool(data["cashflow"]))
+
+        return data
+
+    @staticmethod
+    def _is_auth_error(err: Exception) -> bool:
+        """Check if an exception indicates an authentication error."""
+        error_str = str(err).lower()
+        return any(
+            keyword in error_str
+            for keyword in ("unauthorized", "authentication", "401")
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from API endpoint.
-
-        This is the place to pre-process the data to lookup tables
-        so entities can quickly look up their data.
-        """
+        """Fetch data from API endpoint."""
         try:
-            data = {"accounts": [], "categories": [], "cashflow": {}}
-
-            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
-            # handled by the data update coordinator.
             async with asyncio.timeout(self._timeout):
-                # Grab active context variables to limit data required to be fetched from API
-                # Note: using context is not required if there is no need or ability to limit
-                # data retrieved from API.
                 try:
-                    accounts = await self._api.get_accounts()
-                    data["accounts"] = accounts.get("accounts") or []
-                    _LOGGER.debug(f"Fetched {len(data['accounts'])} accounts from API")
-
-                    categories = await self._api.get_transaction_categories()
-                    data["categories"] = categories.get("categories") or []
-                    _LOGGER.debug(
-                        f"Fetched {len(data['categories'])} categories from API"
-                    )
-
-                    cashflow = await self._api.get_cashflow()
-                    data["cashflow"] = cashflow or {}
-                    _LOGGER.debug(f"Fetched cashflow data: {bool(data['cashflow'])}")
+                    data = await self._fetch_api_data()
 
                     # Debug: log account types for troubleshooting
                     if data["accounts"]:
@@ -251,57 +214,30 @@ class MonarchCoordinator(DataUpdateCoordinator):
                             for acc in data["accounts"]
                             if acc.get("type")
                         ]
-                        _LOGGER.debug(f"Account types found: {set(account_types)}")
+                        _LOGGER.debug("Account types found: %s", set(account_types))
 
+                    return data
                 except RequireMFAException as err:
                     _LOGGER.error("MFA required for Monarch Money authentication")
                     raise ConfigEntryAuthFailed(
                         "Multi-factor authentication required. Please reconfigure the integration."
                     ) from err
                 except Exception as err:
-                    _LOGGER.error(f"Error fetching data from Monarch API: {err}")
-                    # Check if it's an authentication error
-                    if (
-                        "unauthorized" in str(err).lower()
-                        or "authentication" in str(err).lower()
-                        or "401" in str(err)
-                    ):
+                    _LOGGER.error("Error fetching data from Monarch API: %s", err)
+                    if self._is_auth_error(err):
                         _LOGGER.info(
                             "Authentication failed, attempting to re-authenticate"
                         )
-                        _LOGGER.debug("Authentication error details: %s", str(err))
-                        # Try to re-authenticate with stored credentials
                         if await self._authenticate_with_credentials():
                             _LOGGER.info(
                                 "Re-authentication successful, retrying data fetch"
                             )
-                            # Retry the data fetch after successful re-authentication
                             try:
-                                accounts = await self._api.get_accounts()
-                                data["accounts"] = accounts.get("accounts") or []
-                                _LOGGER.debug(
-                                    f"Fetched {len(data['accounts'])} accounts from API after re-auth"
-                                )
-
-                                categories = (
-                                    await self._api.get_transaction_categories()
-                                )
-                                data["categories"] = categories.get("categories") or []
-                                _LOGGER.debug(
-                                    f"Fetched {len(data['categories'])} categories from API after re-auth"
-                                )
-
-                                cashflow = await self._api.get_cashflow()
-                                data["cashflow"] = cashflow or {}
-                                _LOGGER.debug(
-                                    f"Fetched cashflow data after re-auth: {bool(data['cashflow'])}"
-                                )
-
-                                # If we get here, re-authentication and data fetch were successful
-                                return data
+                                return await self._fetch_api_data()
                             except Exception as retry_err:
                                 _LOGGER.error(
-                                    f"Data fetch failed even after re-authentication: {retry_err}"
+                                    "Data fetch failed after re-authentication: %s",
+                                    retry_err,
                                 )
                                 raise ConfigEntryAuthFailed(
                                     f"Authentication failed: {retry_err}"
@@ -313,11 +249,10 @@ class MonarchCoordinator(DataUpdateCoordinator):
                             raise ConfigEntryAuthFailed(
                                 f"Authentication failed: {err}"
                             ) from err
-                    raise UpdateFailed(f"Error communicating with API: {err}") from err
-                return data
-        except ConfigEntryAuthFailed as err:
-            # Raising ConfigEntryAuthFailed will cancel future updates
-            # and start a config flow with SOURCE_REAUTH (async_step_reauth)
-            raise ConfigEntryAuthFailed from err
+                    raise UpdateFailed(
+                        f"Error communicating with API: {err}"
+                    ) from err
+        except ConfigEntryAuthFailed:
+            raise
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
