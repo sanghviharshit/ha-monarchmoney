@@ -1,7 +1,8 @@
 """Update coordinator for Monarch Money integration."""
 
 import asyncio
-from datetime import timedelta
+import calendar as cal_module
+from datetime import date, timedelta
 import logging
 import time
 from typing import Any
@@ -19,6 +20,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from monarchmoney import MonarchMoney, RequireMFAException
 
 from .const import (
+    CONF_ENABLE_CREDIT_SCORE,
+    CONF_ENABLE_HOLDINGS,
+    CONF_ENABLE_RECURRING,
     CONF_MFA_SECRET,
     CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
@@ -167,21 +171,106 @@ class MonarchCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Failed to authenticate with stored credentials: %s", err)
                 return False
 
+    @property
+    def api(self) -> MonarchMoney:
+        """Return the API client."""
+        return self._api
+
     async def _fetch_api_data(self) -> dict[str, Any]:
         """Fetch all data sets from the Monarch API."""
-        data: dict[str, Any] = {"accounts": [], "categories": [], "cashflow": {}}
+        data: dict[str, Any] = {
+            "accounts": [],
+            "categories": [],
+            "cashflow": {},
+        }
+        options = self.config_entry.options
 
-        accounts = await self._api.get_accounts()
-        data["accounts"] = accounts.get("accounts") or []
-        _LOGGER.debug("Fetched %d accounts from API", len(data["accounts"]))
+        # Core data (always fetched in parallel)
+        accounts_coro = self._api.get_accounts()
+        categories_coro = self._api.get_transaction_categories()
+        cashflow_coro = self._api.get_cashflow()
 
-        categories = await self._api.get_transaction_categories()
-        data["categories"] = categories.get("categories") or []
-        _LOGGER.debug("Fetched %d categories from API", len(data["categories"]))
+        accounts_raw, categories_raw, cashflow_raw = await asyncio.gather(
+            accounts_coro, categories_coro, cashflow_coro
+        )
 
-        cashflow = await self._api.get_cashflow()
-        data["cashflow"] = cashflow or {}
-        _LOGGER.debug("Fetched cashflow data: %s", bool(data["cashflow"]))
+        data["accounts"] = accounts_raw.get("accounts") or []
+        data["categories"] = categories_raw.get("categories") or []
+        data["cashflow"] = cashflow_raw or {}
+        _LOGGER.debug(
+            "Fetched %d accounts, %d categories from API",
+            len(data["accounts"]),
+            len(data["categories"]),
+        )
+
+        # Optional data groups (only if enabled)
+        optional_tasks: dict[str, Any] = {}
+
+        if options.get(CONF_ENABLE_CREDIT_SCORE, False):
+            optional_tasks["credit_history"] = self._api.get_credit_history()
+
+        if options.get(CONF_ENABLE_RECURRING, False):
+            today = date.today()
+            start = today.replace(day=1)
+            # End of next month
+            if today.month == 12:
+                next_month = today.replace(year=today.year + 1, month=1, day=1)
+            else:
+                next_month = today.replace(month=today.month + 1, day=1)
+            _, last_day = cal_module.monthrange(next_month.year, next_month.month)
+            end = next_month.replace(day=last_day)
+            optional_tasks["recurring"] = self._api.get_recurring_transactions(
+                start_date=start.strftime("%Y-%m-%d"),
+                end_date=end.strftime("%Y-%m-%d"),
+            )
+
+        if optional_tasks:
+            keys = list(optional_tasks.keys())
+            results = await asyncio.gather(
+                *optional_tasks.values(), return_exceptions=True
+            )
+            for key, result in zip(keys, results):
+                if isinstance(result, Exception):
+                    _LOGGER.error("Failed to fetch %s: %s", key, result)
+                    data[key] = {}
+                else:
+                    data[key] = result
+                    _LOGGER.debug("Fetched %s data", key)
+
+        # Holdings: one call per brokerage account (opt-in)
+        if options.get(CONF_ENABLE_HOLDINGS, False):
+            brokerage_accounts = [
+                a
+                for a in data["accounts"]
+                if a.get("type", {}).get("name") == "brokerage"
+                and not a.get("isHidden", False)
+            ]
+            holdings_data: dict[str, Any] = {}
+            if brokerage_accounts:
+                holdings_results = await asyncio.gather(
+                    *(
+                        self._api.get_account_holdings(int(a["id"]))
+                        for a in brokerage_accounts
+                    ),
+                    return_exceptions=True,
+                )
+                for account, result in zip(brokerage_accounts, holdings_results):
+                    if isinstance(result, Exception):
+                        _LOGGER.error(
+                            "Failed to fetch holdings for %s: %s",
+                            account.get("displayName"),
+                            result,
+                        )
+                    else:
+                        holdings_data[account["id"]] = {
+                            "account": account,
+                            "holdings": result,
+                        }
+                _LOGGER.debug(
+                    "Fetched holdings for %d brokerage accounts",
+                    len(holdings_data),
+                )
+            data["holdings"] = holdings_data
 
         return data
 

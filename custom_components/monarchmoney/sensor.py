@@ -11,7 +11,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import CONF_ENABLE_CREDIT_SCORE, CONF_ENABLE_HOLDINGS, DOMAIN
 from .update_coordinator import MonarchCoordinator
 from .util import format_date
 
@@ -74,6 +74,8 @@ async def async_setup_entry(
 
     coordinator: MonarchCoordinator = hass.data[DOMAIN][config_entry.entry_id]
     unique_id = config_entry.unique_id
+    options = config_entry.options
+
     categories = SENSOR_TYPES_GROUP.keys()
     sensors: list[SensorEntity] = [
         MonarchMoneyCategorySensor(coordinator, category, unique_id)
@@ -83,6 +85,30 @@ async def async_setup_entry(
     sensors.append(MonarchMoneyCashFlowSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyIncomeSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyExpenseSensor(coordinator, unique_id))
+
+    if options.get(CONF_ENABLE_CREDIT_SCORE, False):
+        sensors.append(MonarchCreditScoreSensor(coordinator, unique_id))
+
+    if options.get(CONF_ENABLE_HOLDINGS, False):
+        holdings_data = coordinator.data.get("holdings", {})
+        for account_id, holding_info in holdings_data.items():
+            account = holding_info.get("account", {})
+            holdings_raw = holding_info.get("holdings", {})
+            edges = (
+                holdings_raw.get("portfolio", {})
+                .get("aggregateHoldings", {})
+                .get("edges", [])
+            )
+            for edge in edges:
+                node = edge.get("node", {})
+                security = node.get("security")
+                if security is None:
+                    continue
+                sensors.append(
+                    MonarchHoldingSensor(
+                        coordinator, node, account, unique_id
+                    )
+                )
 
     async_add_entities(sensors, True)
 
@@ -517,6 +543,181 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
         return {"categories": self._expense_cats}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
+        )
+
+
+class MonarchCreditScoreSensor(CoordinatorEntity, SensorEntity):
+    """Monarch Money credit score sensor."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, unique_id) -> None:
+        """Initialize the credit score sensor."""
+        super().__init__(coordinator)
+        self._state = None
+        self._reported_date = None
+        self._previous_score = None
+        self._score_change = None
+        self._attr_name = "Credit Score"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_credit_score"
+        self._id = unique_id
+        self._attr_icon = "mdi:credit-card-check"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return self._state
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        update_data = self.coordinator.data
+        if not update_data:
+            return
+
+        credit_data = update_data.get("credit_history", {})
+        snapshots = credit_data.get("creditScoreSnapshots") or []
+
+        if not snapshots:
+            return
+
+        # Sort by date to ensure we get the most recent
+        sorted_snapshots = sorted(
+            snapshots,
+            key=lambda s: s.get("reportedDate", ""),
+        )
+
+        latest = sorted_snapshots[-1]
+        self._state = latest.get("score")
+        self._reported_date = latest.get("reportedDate")
+
+        if len(sorted_snapshots) >= 2:
+            previous = sorted_snapshots[-2]
+            self._previous_score = previous.get("score")
+            if self._state is not None and self._previous_score is not None:
+                self._score_change = self._state - self._previous_score
+        else:
+            self._previous_score = None
+            self._score_change = None
+
+        self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes of the sensor."""
+        return {
+            "reported_date": self._reported_date,
+            "previous_score": self._previous_score,
+            "score_change": self._score_change,
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch Money",
+            manufacturer="Monarch Money",
+            model="Financial Account",
+        )
+
+
+class MonarchHoldingSensor(CoordinatorEntity, SensorEntity):
+    """Monarch Money investment holding sensor."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, holding_node, account, unique_id) -> None:
+        """Initialize the holding sensor."""
+        super().__init__(coordinator)
+        self._holding_id = holding_node.get("id")
+        self._account_id = account.get("id")
+        self._account_name = account.get("displayName", "")
+
+        security = holding_node.get("security", {})
+        self._ticker = security.get("ticker", "")
+        security_name = security.get("name", self._ticker)
+
+        self._attr_name = f"{self._ticker or security_name}"
+        self._attr_unique_id = (
+            f"{DOMAIN}_{unique_id}_{self._account_id}_{self._holding_id}"
+        )
+        self._id = unique_id
+        self._attr_native_unit_of_measurement = "USD"
+        self._attr_icon = "mdi:chart-line"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_state_class = SensorStateClass.TOTAL
+
+        self._state = None
+        self._attrs: dict = {}
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return self._state
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        update_data = self.coordinator.data
+        if not update_data:
+            return
+
+        holdings_data = update_data.get("holdings", {})
+        account_holdings = holdings_data.get(self._account_id, {})
+        holdings_raw = account_holdings.get("holdings", {})
+        edges = (
+            holdings_raw.get("portfolio", {})
+            .get("aggregateHoldings", {})
+            .get("edges", [])
+        )
+
+        for edge in edges:
+            node = edge.get("node", {})
+            if node.get("id") == self._holding_id:
+                self._state = node.get("totalValue")
+                security = node.get("security") or {}
+                self._attrs = {
+                    "ticker": security.get("ticker"),
+                    "quantity": node.get("quantity"),
+                    "cost_basis": node.get("basis"),
+                    "current_price": security.get("currentPrice"),
+                    "security_type": security.get("typeDisplay"),
+                    "one_day_change_percent": security.get(
+                        "oneDayChangePercent"
+                    ),
+                    "one_day_change_dollars": security.get(
+                        "oneDayChangeDollars"
+                    ),
+                    "account_name": self._account_name,
+                }
+                # Calculate gain/loss
+                basis = node.get("basis")
+                total_value = node.get("totalValue")
+                if basis is not None and total_value is not None:
+                    self._attrs["gain_loss"] = round(total_value - basis, 2)
+                    if basis > 0:
+                        self._attrs["gain_loss_percent"] = round(
+                            ((total_value - basis) / basis) * 100, 2
+                        )
+                break
+
+        self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes of the sensor."""
+        return self._attrs
 
     @property
     def device_info(self) -> DeviceInfo:

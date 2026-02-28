@@ -48,7 +48,15 @@
       "init": {
         "data": {
           "scan_interval": "Scan Interval",
-          "timeout": "Timeout"
+          "timeout": "Timeout",
+          "enable_credit_score": "Enable Credit Score",
+          "enable_holdings": "Enable Investment Holdings",
+          "enable_recurring": "Enable Recurring Transactions Calendar"
+        },
+        "data_description": {
+          "enable_credit_score": "Track your credit score as a sensor.",
+          "enable_holdings": "Create a sensor per investment holding in each brokerage account. Adds one API call per brokerage account per poll.",
+          "enable_recurring": "Show upcoming recurring transactions in a calendar entity."
         }
       }
     }
