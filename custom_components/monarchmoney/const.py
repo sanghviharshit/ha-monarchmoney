@@ -9,6 +9,7 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 ATTRIBUTION = "Data provided by Monarch"
 
 CONF_TIMEOUT = "timeout"
+CONF_TOKEN = "token"
 CONF_MFA_CODE = "mfa_code"
 CONF_MFA_SECRET = "mfa_secret"
 

@@ -20,6 +20,7 @@ from monarchmoney import MonarchMoney, RequireMFAException
 
 from .const import (
     CONF_MFA_SECRET,
+    CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -33,14 +34,15 @@ class MonarchCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
-        self._api = MonarchMoney()
+        # Initialize with stored token if available (no pickle file needed)
+        stored_token = config_entry.data.get(CONF_TOKEN)
+        self._api = MonarchMoney(token=stored_token) if stored_token else MonarchMoney()
         self._auth_lock = (
             asyncio.Lock()
         )  # Prevent concurrent re-authentication attempts
         self._last_auth_attempt = (
             0  # Track last authentication attempt for rate limiting
         )
-        # Session loading moved to _async_setup to avoid blocking I/O in event loop
 
         options = config_entry.options
         self._update_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -59,30 +61,19 @@ class MonarchCoordinator(DataUpdateCoordinator):
     async def _async_setup(self) -> None:
         """Set up session on first refresh (called automatically)."""
         _LOGGER.debug("Setting up coordinator session")
-        mfa_secret = self.config_entry.data.get(CONF_MFA_SECRET)
-        _LOGGER.debug(
-            "MFA secret available: %s",
-            bool(mfa_secret and mfa_secret.strip()),
-        )
 
-        # Try to load existing session first
-        session_loaded = False
-        try:
-            await self.hass.async_add_executor_job(self._api.load_session)
+        # Validate existing token from config entry
+        if self.config_entry.data.get(CONF_TOKEN):
             if await self._validate_session():
-                _LOGGER.debug("Loaded session is valid")
-                session_loaded = True
-            else:
-                _LOGGER.debug("Loaded session is invalid, will re-authenticate")
-        except Exception as err:
-            _LOGGER.debug("Failed to load existing session: %s", err)
+                _LOGGER.debug("Stored token is valid")
+                return
+            _LOGGER.debug("Stored token is invalid, will re-authenticate")
 
-        if not session_loaded:
-            _LOGGER.debug("Attempting authentication with stored credentials")
-            if await self._authenticate_with_credentials():
-                _LOGGER.info("Initial authentication successful during setup")
-            else:
-                _LOGGER.warning("Initial authentication failed during setup")
+        _LOGGER.debug("Attempting authentication with stored credentials")
+        if await self._authenticate_with_credentials():
+            _LOGGER.info("Initial authentication successful during setup")
+        else:
+            _LOGGER.warning("Initial authentication failed during setup")
 
     async def _validate_session(self) -> bool:
         """Check if the current session is valid by making a lightweight API call."""
@@ -158,9 +149,12 @@ class MonarchCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Replacing API instance with freshly authenticated one")
                 self._api = fresh_api
 
-                # Save session manually using executor to avoid blocking I/O
-                await self.hass.async_add_executor_job(self._api.save_session)
-                _LOGGER.debug("Session saved successfully after re-authentication")
+                # Persist the new token in the config entry (no pickle file needed)
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={**self.config_entry.data, CONF_TOKEN: fresh_api.token},
+                )
+                _LOGGER.debug("Token saved to config entry after re-authentication")
 
                 return True
 

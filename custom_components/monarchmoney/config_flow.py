@@ -18,6 +18,7 @@ from .const import (
     CONF_MFA_CODE,
     CONF_MFA_SECRET,
     CONF_TIMEOUT,
+    CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -88,6 +89,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._existing_entry: dict[str, Any] | None = None
         self._user_input: dict[str, Any] = {}
         self._description_placeholders: dict[str, str] | None = None
+        self._api_token: str | None = None
 
     def _get_schema(self, step_id: str) -> vol.Schema:
         """Get the schema for the given step."""
@@ -170,9 +172,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise InvalidAuth from exc
 
         _LOGGER.info("Successfully authenticated with Monarch Money")
-        # Save session manually using executor to avoid blocking I/O
-        await self.hass.async_add_executor_job(api.save_session)
-        _LOGGER.debug("Session saved successfully")
+        self._api_token = api.token
 
     async def _test_mfa_and_set_token(self) -> None:
         """Test MFA code and save session token."""
@@ -184,9 +184,7 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._user_input[CONF_MFA_CODE],
             )
             _LOGGER.info("Successfully authenticated with Monarch Money using MFA")
-
-            # Save the session using the library's method with executor
-            await self.hass.async_add_executor_job(api.save_session)
+            self._api_token = api.token
 
         except LoginFailedException as exc:
             _LOGGER.error("Failed to authenticate with Monarch Money using MFA")
@@ -291,6 +289,10 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=self._get_schema(step_id),
                 errors={"base": "cannot_connect"},
             )
+
+        # Include the auth token in config entry data
+        if self._api_token:
+            self._user_input[CONF_TOKEN] = self._api_token
 
         if self.source == config_entries.SOURCE_REAUTH:
             # Handle re-authentication (both reauth_confirm and mfa during reauth)
