@@ -8,10 +8,16 @@ from homeassistant.components.sensor.const import SensorDeviceClass, SensorState
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ENABLE_CREDIT_SCORE, CONF_ENABLE_HOLDINGS, DOMAIN
+from .const import (
+    CONF_ENABLE_AGGREGATED_HOLDINGS,
+    CONF_ENABLE_CREDIT_SCORE,
+    CONF_ENABLE_HOLDINGS,
+    DOMAIN,
+)
 from .update_coordinator import MonarchCoordinator
 from .util import format_date
 
@@ -64,6 +70,19 @@ SENSOR_TYPES_GROUP = {
     },
 }
 
+# Prefix for entity names based on account group
+GROUP_PREFIX = {
+    ATTR_ASSETS: "Assets",
+    ATTR_LIABILITIES: "Liabilities",
+    "OTHER": "Accounts",
+}
+
+# Override display name for categories where the raw name is redundant with the prefix
+CATEGORY_DISPLAY_OVERRIDE = {
+    ATTR_OTHER_ASSET: "Other",
+    ATTR_OTHER_LIABILITY: "Other",
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -76,18 +95,71 @@ async def async_setup_entry(
     unique_id = config_entry.unique_id
     options = config_entry.options
 
-    categories = SENSOR_TYPES_GROUP.keys()
-    sensors: list[SensorEntity] = [
-        MonarchMoneyCategorySensor(coordinator, category, unique_id)
-        for category in categories
-    ]
+    # Check which account types actually have data for conditional sensors
+    accounts = coordinator.data.get("accounts", []) if coordinator.data else []
+    account_types_present = {
+        a.get("type", {}).get("name") for a in accounts if a.get("type")
+    }
+
+    sensors: list[SensorEntity] = []
+    for category in SENSOR_TYPES_GROUP:
+        # Only create "Other" sensor if accounts of that type exist
+        if category == ATTR_OTHER and "other" not in account_types_present:
+            continue
+        sensors.append(
+            MonarchMoneyCategorySensor(coordinator, category, unique_id)
+        )
     sensors.append(MonarchMoneyNetWorthSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyCashFlowSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyIncomeSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyExpenseSensor(coordinator, unique_id))
 
+    # Migrate: remove legacy cashflow entities renamed to *_this_month
+    ent_reg = er.async_get(hass)
+    legacy_cashflow_ids = [
+        f"{DOMAIN}_{unique_id}_cash_flow",
+        f"{DOMAIN}_{unique_id}_income",
+        f"{DOMAIN}_{unique_id}_expense",
+    ]
+    for legacy_uid in legacy_cashflow_ids:
+        old_eid = ent_reg.async_get_entity_id("sensor", DOMAIN, legacy_uid)
+        if old_eid:
+            _LOGGER.debug("Removing legacy cashflow entity %s", old_eid)
+            ent_reg.async_remove(old_eid)
+
     if options.get(CONF_ENABLE_CREDIT_SCORE, False):
-        sensors.append(MonarchCreditScoreSensor(coordinator, unique_id))
+        credit_data = coordinator.data.get("credit_history", {})
+        snapshots = credit_data.get("creditScoreSnapshots") or []
+        household = credit_data.get("myHousehold", {})
+        household_users = household.get("users", [])
+        user_names = {
+            u["id"]: u.get("displayName") or u.get("name", "Unknown")
+            for u in household_users
+            if u.get("id")
+        }
+
+        # Find users that have credit score data
+        user_ids_with_scores = {
+            snap["user"]["id"]
+            for snap in snapshots
+            if snap.get("user", {}).get("id")
+        }
+
+        for user_id in user_ids_with_scores:
+            display_name = user_names.get(user_id, "Unknown")
+            sensors.append(
+                MonarchCreditScoreSensor(
+                    coordinator, unique_id, user_id, display_name
+                )
+            )
+
+        # Migrate: remove legacy single credit score entity if it exists
+        old_entity_id = ent_reg.async_get_entity_id(
+            "sensor", DOMAIN, f"{DOMAIN}_{unique_id}_credit_score"
+        )
+        if old_entity_id:
+            _LOGGER.debug("Removing legacy credit score entity %s", old_entity_id)
+            ent_reg.async_remove(old_entity_id)
 
     if options.get(CONF_ENABLE_HOLDINGS, False):
         holdings_data = coordinator.data.get("holdings", {})
@@ -110,6 +182,56 @@ async def async_setup_entry(
                     )
                 )
 
+    if options.get(CONF_ENABLE_AGGREGATED_HOLDINGS, False):
+        holdings_data = coordinator.data.get("holdings", {})
+        # Group holdings by ticker across all accounts
+        aggregated: dict[str, dict] = {}
+        for holding_info in holdings_data.values():
+            account = holding_info.get("account", {})
+            holdings_raw = holding_info.get("holdings", {})
+            edges = (
+                holdings_raw.get("portfolio", {})
+                .get("aggregateHoldings", {})
+                .get("edges", [])
+            )
+            for edge in edges:
+                node = edge.get("node", {})
+                security = node.get("security")
+                if security is None:
+                    continue
+                ticker = security.get("ticker", "")
+                if not ticker:
+                    continue
+                if ticker not in aggregated:
+                    aggregated[ticker] = {
+                        "ticker": ticker,
+                        "security_name": security.get("name", ticker),
+                        "security_type": security.get("typeDisplay"),
+                        "current_price": security.get("currentPrice"),
+                        "one_day_change_percent": security.get(
+                            "oneDayChangePercent"
+                        ),
+                        "one_day_change_dollars": security.get(
+                            "oneDayChangeDollars"
+                        ),
+                        "total_value": 0.0,
+                        "quantity": 0.0,
+                        "basis": 0.0,
+                        "accounts": [],
+                    }
+                agg = aggregated[ticker]
+                agg["total_value"] += node.get("totalValue") or 0.0
+                agg["quantity"] += node.get("quantity") or 0.0
+                agg["basis"] += node.get("basis") or 0.0
+                agg["accounts"].append(account.get("displayName", ""))
+
+        for ticker, agg_data in aggregated.items():
+            sensors.append(
+                MonarchAggregatedHoldingSensor(
+                    coordinator, agg_data, unique_id
+                )
+            )
+
     async_add_entities(sensors, True)
 
 
@@ -122,8 +244,10 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator, context=category)
         self._account_type = SENSOR_TYPES_GROUP[category]["type"]
-        # self._account_group = SENSOR_TYPES_GROUP[category]["group"]
-        self._attr_name = category
+        group = SENSOR_TYPES_GROUP[category]["group"]
+        prefix = GROUP_PREFIX[group]
+        display_name = CATEGORY_DISPLAY_OVERRIDE.get(category, category)
+        self._attr_name = f"{prefix} {display_name}"
         old_name = f"Monarch {category}"
         self._attr_unique_id = f"{DOMAIN}_{unique_id}_{old_name.lower().replace(' ', '_')}"
         self._state = None  # Keep None for initial state to show "Unknown"
@@ -240,7 +364,7 @@ class MonarchMoneyCategorySensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )
@@ -257,7 +381,7 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
         self._state = None
         self._assets = None
         self._liabilities = None
-        self._attr_name = "Net Worth"
+        self._attr_name = "Summary Net Worth"
         self._attr_unique_id = f"{DOMAIN}_{unique_id}_net_worth"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
@@ -332,7 +456,7 @@ class MonarchMoneyNetWorthSensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )
@@ -351,8 +475,8 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
         self._expenses = None
         self._savings = None
         self._savings_rate = None
-        self._attr_name = "Cash Flow"
-        self._attr_unique_id = f"{DOMAIN}_{unique_id}_cash_flow"
+        self._attr_name = "Cashflow Savings This Month"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_cash_flow_this_month"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:chart-sankey-variant"
@@ -406,7 +530,7 @@ class MonarchMoneyCashFlowSensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )
@@ -422,8 +546,8 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._state = None
         self._income = None
-        self._attr_name = "Income"
-        self._attr_unique_id = f"{DOMAIN}_{unique_id}_income"
+        self._attr_name = "Cashflow Income This Month"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_income_this_month"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:bank-plus"
@@ -477,7 +601,7 @@ class MonarchMoneyIncomeSensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )
@@ -493,8 +617,8 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._state = None
         self._income = None
-        self._attr_name = "Expenses"
-        self._attr_unique_id = f"{DOMAIN}_{unique_id}_expense"
+        self._attr_name = "Cashflow Expenses This Month"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_expenses_this_month"
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
         self._attr_icon = "mdi:bank-minus"
@@ -549,26 +673,28 @@ class MonarchMoneyExpenseSensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )
 
 
 class MonarchCreditScoreSensor(CoordinatorEntity, SensorEntity):
-    """Monarch Money credit score sensor."""
+    """Monarch Money credit score sensor for a specific household member."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, unique_id) -> None:
+    def __init__(self, coordinator, unique_id, user_id, user_name) -> None:
         """Initialize the credit score sensor."""
         super().__init__(coordinator)
+        self._user_id = user_id
+        self._user_name = user_name
         self._state = None
         self._reported_date = None
         self._previous_score = None
         self._score_change = None
-        self._attr_name = "Credit Score"
-        self._attr_unique_id = f"{DOMAIN}_{unique_id}_credit_score"
+        self._attr_name = f"Credit Score ({user_name})"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id}_credit_score_{user_id}"
         self._id = unique_id
         self._attr_icon = "mdi:credit-card-check"
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -586,7 +712,13 @@ class MonarchCreditScoreSensor(CoordinatorEntity, SensorEntity):
             return
 
         credit_data = update_data.get("credit_history", {})
-        snapshots = credit_data.get("creditScoreSnapshots") or []
+        all_snapshots = credit_data.get("creditScoreSnapshots") or []
+
+        # Filter snapshots for this user
+        snapshots = [
+            s for s in all_snapshots
+            if s.get("user", {}).get("id") == self._user_id
+        ]
 
         if not snapshots:
             return
@@ -616,6 +748,7 @@ class MonarchCreditScoreSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         """Return the state attributes of the sensor."""
         return {
+            "user_name": self._user_name,
             "reported_date": self._reported_date,
             "previous_score": self._previous_score,
             "score_change": self._score_change,
@@ -626,7 +759,7 @@ class MonarchCreditScoreSensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )
@@ -648,9 +781,9 @@ class MonarchHoldingSensor(CoordinatorEntity, SensorEntity):
         self._ticker = security.get("ticker", "")
         security_name = security.get("name", self._ticker)
 
-        self._attr_name = f"{self._ticker or security_name}"
+        self._attr_name = f"Holding {self._ticker or security_name} ({self._account_name})"
         self._attr_unique_id = (
-            f"{DOMAIN}_{unique_id}_{self._account_id}_{self._holding_id}"
+            f"{DOMAIN}_{unique_id}_holding_acct_{self._account_id}_{self._holding_id}"
         )
         self._id = unique_id
         self._attr_native_unit_of_measurement = "USD"
@@ -724,7 +857,116 @@ class MonarchHoldingSensor(CoordinatorEntity, SensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
+            manufacturer="Monarch Money",
+            model="Financial Account",
+        )
+
+
+class MonarchAggregatedHoldingSensor(CoordinatorEntity, SensorEntity):
+    """Monarch Money aggregated investment holding sensor (across all accounts)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, agg_data, unique_id) -> None:
+        """Initialize the aggregated holding sensor."""
+        super().__init__(coordinator)
+        self._ticker = agg_data["ticker"]
+        self._attr_name = f"Holding {self._ticker} Total"
+        self._attr_unique_id = (
+            f"{DOMAIN}_{unique_id}_holding_agg_{self._ticker}"
+        )
+        self._id = unique_id
+        self._attr_native_unit_of_measurement = "USD"
+        self._attr_icon = "mdi:chart-areaspline"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_state_class = SensorStateClass.TOTAL
+
+        self._state = None
+        self._attrs: dict = {}
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return self._state
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        update_data = self.coordinator.data
+        if not update_data:
+            return
+
+        holdings_data = update_data.get("holdings", {})
+
+        total_value = 0.0
+        total_quantity = 0.0
+        total_basis = 0.0
+        accounts: list[str] = []
+        current_price = None
+        security_type = None
+        one_day_change_percent = None
+        one_day_change_dollars = None
+
+        for holding_info in holdings_data.values():
+            account = holding_info.get("account", {})
+            holdings_raw = holding_info.get("holdings", {})
+            edges = (
+                holdings_raw.get("portfolio", {})
+                .get("aggregateHoldings", {})
+                .get("edges", [])
+            )
+            for edge in edges:
+                node = edge.get("node", {})
+                security = node.get("security")
+                if security is None:
+                    continue
+                if security.get("ticker") == self._ticker:
+                    total_value += node.get("totalValue") or 0.0
+                    total_quantity += node.get("quantity") or 0.0
+                    total_basis += node.get("basis") or 0.0
+                    accounts.append(account.get("displayName", ""))
+                    # Price/type is the same across accounts
+                    current_price = security.get("currentPrice")
+                    security_type = security.get("typeDisplay")
+                    one_day_change_percent = security.get(
+                        "oneDayChangePercent"
+                    )
+                    one_day_change_dollars = security.get(
+                        "oneDayChangeDollars"
+                    )
+
+        self._state = round(total_value, 2)
+        self._attrs = {
+            "ticker": self._ticker,
+            "quantity": round(total_quantity, 4),
+            "cost_basis": round(total_basis, 2),
+            "current_price": current_price,
+            "security_type": security_type,
+            "one_day_change_percent": one_day_change_percent,
+            "one_day_change_dollars": one_day_change_dollars,
+            "accounts": accounts,
+            "account_count": len(accounts),
+        }
+        if total_basis > 0:
+            self._attrs["gain_loss"] = round(total_value - total_basis, 2)
+            self._attrs["gain_loss_percent"] = round(
+                ((total_value - total_basis) / total_basis) * 100, 2
+            )
+
+        self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes of the sensor."""
+        return self._attrs
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._id)},
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )

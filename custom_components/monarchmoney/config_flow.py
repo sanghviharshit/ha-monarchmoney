@@ -15,6 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 from monarchmoney import MonarchMoney, RequireMFAException, LoginFailedException
 
 from .const import (
+    CONF_ENABLE_AGGREGATED_HOLDINGS,
     CONF_ENABLE_CREDIT_SCORE,
     CONF_ENABLE_HOLDINGS,
     CONF_ENABLE_RECURRING,
@@ -80,6 +81,7 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Required(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): vol.In(VALUES_TIMEOUT),
         vol.Optional(CONF_ENABLE_CREDIT_SCORE, default=False): bool,
         vol.Optional(CONF_ENABLE_HOLDINGS, default=False): bool,
+        vol.Optional(CONF_ENABLE_AGGREGATED_HOLDINGS, default=False): bool,
         vol.Optional(CONF_ENABLE_RECURRING, default=False): bool,
     }
 )

@@ -3,6 +3,7 @@
 import asyncio
 import calendar as cal_module
 from datetime import date, timedelta
+import importlib.metadata
 import logging
 import time
 from typing import Any
@@ -20,6 +21,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from monarchmoney import MonarchMoney, RequireMFAException
 
 from .const import (
+    CONF_ENABLE_AGGREGATED_HOLDINGS,
     CONF_ENABLE_CREDIT_SCORE,
     CONF_ENABLE_HOLDINGS,
     CONF_ENABLE_RECURRING,
@@ -237,8 +239,10 @@ class MonarchCoordinator(DataUpdateCoordinator):
                     data[key] = result
                     _LOGGER.debug("Fetched %s data", key)
 
-        # Holdings: one call per brokerage account (opt-in)
-        if options.get(CONF_ENABLE_HOLDINGS, False):
+        # Holdings: one call per brokerage account (opt-in, used by both per-account and aggregated)
+        if options.get(CONF_ENABLE_HOLDINGS, False) or options.get(
+            CONF_ENABLE_AGGREGATED_HOLDINGS, False
+        ):
             brokerage_accounts = [
                 a
                 for a in data["accounts"]

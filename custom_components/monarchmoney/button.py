@@ -63,7 +63,7 @@ class MonarchRefreshButton(CoordinatorEntity, ButtonEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._id)},
-            name="Monarch Money",
+            name="Monarch",
             manufacturer="Monarch Money",
             model="Financial Account",
         )

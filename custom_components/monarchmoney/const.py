@@ -19,6 +19,7 @@ CONF_MFA_SECRET = "mfa_secret"
 CONF_ENABLE_RECURRING = "enable_recurring"
 CONF_ENABLE_CREDIT_SCORE = "enable_credit_score"
 CONF_ENABLE_HOLDINGS = "enable_holdings"
+CONF_ENABLE_AGGREGATED_HOLDINGS = "enable_aggregated_holdings"
 
 VALUES_SCAN_INTERVAL = [60, 120, 600, 1800, 3600, 21600, 86400]
 VALUES_TIMEOUT = [10, 15, 30, 45, 60]

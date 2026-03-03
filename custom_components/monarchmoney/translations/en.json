@@ -50,12 +50,14 @@
           "scan_interval": "Scan Interval",
           "timeout": "Timeout",
           "enable_credit_score": "Enable Credit Score",
-          "enable_holdings": "Enable Investment Holdings",
+          "enable_holdings": "Enable Investment Holdings (per account)",
+          "enable_aggregated_holdings": "Enable Aggregated Investment Holdings",
           "enable_recurring": "Enable Recurring Transactions Calendar"
         },
         "data_description": {
           "enable_credit_score": "Track your credit score as a sensor.",
           "enable_holdings": "Create a sensor per investment holding in each brokerage account. Adds one API call per brokerage account per poll.",
+          "enable_aggregated_holdings": "Create one sensor per unique security (e.g. VTI) with totals aggregated across all brokerage accounts. Requires the same API calls as per-account holdings.",
           "enable_recurring": "Show upcoming recurring transactions in a calendar entity."
         }
       }
