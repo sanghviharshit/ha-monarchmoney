@@ -15,7 +15,7 @@ def _parse_recurring() -> list[RecurringTransaction]:
 
 
 def test_recurring_transaction_parsing():
-    """Recurring transactions should parse correctly."""
+    """Recurring transactions should parse correctly (all 3 have dates)."""
     recurring = _parse_recurring()
     assert len(recurring) == 3
 

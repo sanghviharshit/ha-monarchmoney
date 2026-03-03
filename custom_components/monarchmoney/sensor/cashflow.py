@@ -29,7 +29,7 @@ class MonarchMoneyCashFlowSensor(MonarchSensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         data = self.coordinator.data
-        if not data or not data.cashflow.summary:
+        if not data or not data.cashflow or not data.cashflow.summary:
             return
 
         summary = data.cashflow.summary

@@ -25,8 +25,7 @@ class TestConfigFlowVersion:
     def test_version_value(self) -> None:
         """Test that VERSION is an integer."""
         assert isinstance(MonarchConfigFlow.VERSION, int)
-        # Current version is 1; will be updated to 2 in v2 refactor
-        assert MonarchConfigFlow.VERSION >= 1
+        assert MonarchConfigFlow.VERSION == 2
 
 
 class TestMfaErrorDetection:
@@ -37,54 +36,45 @@ class TestMfaErrorDetection:
     These tests verify that pattern.
     """
 
-    @staticmethod
-    def _is_mfa_error(error_str: str) -> bool:
-        """Replicate the MFA error detection logic from config_flow.py."""
-        error_lower = error_str.lower()
-        return any(
-            keyword in error_lower
-            for keyword in ("401", "unauthorized", "mfa", "multi-factor", "authentication")
-        )
-
     def test_401_unauthorized(self) -> None:
         """Test that '401 unauthorized' is detected as MFA error."""
-        assert self._is_mfa_error("401 unauthorized") is True
+        assert MonarchConfigFlow._is_mfa_error("401 unauthorized") is True
 
     def test_timeout_not_mfa(self) -> None:
         """Test that 'timeout' is NOT an MFA error."""
-        assert self._is_mfa_error("timeout") is False
+        assert MonarchConfigFlow._is_mfa_error("timeout") is False
 
     def test_mfa_required(self) -> None:
         """Test that 'mfa required' is detected."""
-        assert self._is_mfa_error("mfa required") is True
+        assert MonarchConfigFlow._is_mfa_error("mfa required") is True
 
     def test_multi_factor_required(self) -> None:
         """Test that 'multi-factor' is detected."""
-        assert self._is_mfa_error("Multi-Factor Authentication Required") is True
+        assert MonarchConfigFlow._is_mfa_error("multi-factor authentication required") is True
 
     def test_authentication_failed(self) -> None:
         """Test that 'authentication failed' is detected."""
-        assert self._is_mfa_error("authentication failed") is True
+        assert MonarchConfigFlow._is_mfa_error("authentication failed") is True
 
     def test_connection_refused(self) -> None:
         """Test that 'connection refused' is NOT an MFA error."""
-        assert self._is_mfa_error("connection refused") is False
+        assert MonarchConfigFlow._is_mfa_error("connection refused") is False
 
     def test_rate_limited(self) -> None:
         """Test that '429 Too Many Requests' is NOT an MFA error."""
-        assert self._is_mfa_error("429 Too Many Requests") is False
+        assert MonarchConfigFlow._is_mfa_error("429 too many requests") is False
 
     def test_empty_string(self) -> None:
         """Test that empty string is NOT an MFA error."""
-        assert self._is_mfa_error("") is False
+        assert MonarchConfigFlow._is_mfa_error("") is False
 
     def test_unauthorized_alone(self) -> None:
         """Test that 'unauthorized' alone is detected."""
-        assert self._is_mfa_error("Unauthorized") is True
+        assert MonarchConfigFlow._is_mfa_error("unauthorized") is True
 
     def test_generic_server_error(self) -> None:
         """Test that generic server error is NOT an MFA error."""
-        assert self._is_mfa_error("Internal Server Error") is False
+        assert MonarchConfigFlow._is_mfa_error("internal server error") is False
 
 
 class TestMfaSecretHandling:

@@ -26,13 +26,13 @@ class MonarchMoneyIncomeSensor(MonarchSensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         data = self.coordinator.data
-        if not data:
+        if not data or not data.cashflow:
             return
 
         # Build category map from categories list
         income_cats: dict[str, float] = {}
         for cat in data.categories:
-            if cat.group and cat.group.type == "income":
+            if cat.group is not None and cat.group.type == "income":
                 income_cats[cat.name] = 0.0
 
         # Fill from cashflow by-category data

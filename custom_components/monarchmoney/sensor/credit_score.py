@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor.const import SensorStateClass
 from homeassistant.core import callback
 
 from ..const import DOMAIN
 from ..entity import MonarchEntity
 from ..update_coordinator import MonarchCoordinator
-
-from homeassistant.components.sensor import SensorEntity
 
 
 class MonarchCreditScoreSensor(MonarchEntity, SensorEntity):

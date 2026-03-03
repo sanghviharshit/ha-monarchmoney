@@ -7,6 +7,7 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -43,19 +44,16 @@ class MonarchRefreshButton(MonarchEntity, ButtonEntity):
         """Handle the button press."""
         data = self.coordinator.data
         if not data:
-            _LOGGER.warning("No data available to refresh")
-            return
+            raise HomeAssistantError("No data available to refresh")
 
         account_ids = [a.id for a in data.accounts if a.id]
         if not account_ids:
-            _LOGGER.warning("No accounts found to refresh")
-            return
+            raise HomeAssistantError("No accounts found to refresh")
 
         _LOGGER.info("Requesting refresh for %d accounts", len(account_ids))
         try:
             await self.coordinator.api.request_accounts_refresh(account_ids)
         except Exception as err:
-            _LOGGER.error("Failed to refresh accounts: %s", err)
-            return
+            raise HomeAssistantError(f"Failed to refresh accounts: {err}") from err
 
         await self.coordinator.async_request_refresh()

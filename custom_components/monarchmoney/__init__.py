@@ -21,6 +21,14 @@ from .update_coordinator import MonarchCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old config entries to current version."""
+    if config_entry.version == 1:
+        _LOGGER.debug("Migrating config entry from version 1 to 2")
+        hass.config_entries.async_update_entry(config_entry, version=2)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Monarch Money from a config entry."""
     coordinator = MonarchCoordinator(hass, entry)

@@ -89,14 +89,14 @@ class TransactionCategory:
     """A transaction category with its parent group."""
 
     name: str
-    group: CategoryGroup
+    group: CategoryGroup | None
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> TransactionCategory:
-        group_data = data.get("group") or {}
+        group_data = data.get("group")
         return cls(
             name=data.get("name", ""),
-            group=CategoryGroup.from_api(group_data),
+            group=CategoryGroup.from_api(group_data) if group_data else None,
         )
 
 
@@ -198,7 +198,7 @@ class HouseholdUser:
     def from_api(cls, data: dict[str, Any]) -> HouseholdUser:
         return cls(
             id=data.get("id", ""),
-            display_name=data.get("displayName", data.get("name", "")),
+            display_name=data.get("displayName", data.get("name", "")) or "Unknown",
         )
 
 
@@ -281,8 +281,9 @@ class AccountHoldings:
 
     @classmethod
     def from_api(
-        cls, account_data: dict[str, Any], holdings_data: dict[str, Any]
+        cls, account: Account | dict[str, Any], holdings_data: dict[str, Any]
     ) -> AccountHoldings:
+        """Build from an Account object (or raw dict) and holdings response."""
         portfolio = holdings_data.get("portfolio") or {}
         agg = portfolio.get("aggregateHoldings") or {}
         edges = agg.get("edges") or []
@@ -292,8 +293,9 @@ class AccountHoldings:
             holding = Holding.from_api(node)
             if holding is not None:
                 holdings.append(holding)
+        account_obj = account if isinstance(account, Account) else Account.from_api(account)
         return cls(
-            account=Account.from_api(account_data),
+            account=account_obj,
             holdings=holdings,
         )
 
@@ -314,15 +316,19 @@ class RecurringTransaction:
     account_name: str
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> RecurringTransaction:
+    def from_api(cls, data: dict[str, Any]) -> RecurringTransaction | None:
+        """Return a RecurringTransaction or None when date is missing."""
+        date_str = data.get("date")
+        if not date_str:
+            return None
         stream = data.get("stream") or {}
         merchant = stream.get("merchant") or {}
         category = data.get("category") or {}
         account = data.get("account") or {}
         return cls(
-            date=data.get("date", ""),
+            date=date_str,
             amount=data.get("amount", 0.0),
-            merchant_name=merchant.get("name", ""),
+            merchant_name=merchant.get("name") or "Unknown",
             frequency=stream.get("frequency", ""),
             category_name=category.get("name", ""),
             account_name=account.get("displayName", ""),

@@ -33,7 +33,9 @@ class MonarchMoneyNetWorthSensor(MonarchSensorEntity):
         if not data:
             return
 
-        # P0 BUG FIX: filter BOTH assets AND liabilities from active_accounts
+        # Liabilities must also be filtered by include_in_net_worth/is_hidden,
+        # not drawn from the full account list, to avoid double-counting
+        # hidden or excluded debt in the net worth calculation.
         active_accounts = [
             a for a in data.accounts
             if a.include_in_net_worth and not a.is_hidden

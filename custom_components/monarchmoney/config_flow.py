@@ -164,6 +164,9 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 raise RequireMFA
             else:
                 raise InvalidAuth from exc
+        except (ConnectionError, TimeoutError, OSError) as exc:
+            _LOGGER.error("Failed to connect to Monarch Money: %s", exc)
+            raise CannotConnect from exc
         except Exception as exc:
             _LOGGER.error("Failed to login to Monarch Money")
             # Check if this is an MFA-related error by examining the error message
@@ -197,6 +200,9 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 raise RateLimited from exc
             else:
                 raise InvalidAuth from exc
+        except (ConnectionError, TimeoutError, OSError) as exc:
+            _LOGGER.error("Failed to connect to Monarch Money during MFA: %s", exc)
+            raise CannotConnect from exc
         except Exception as exc:
             _LOGGER.error("Failed to authenticate with Monarch Money using MFA")
             raise InvalidAuth from exc
@@ -266,6 +272,12 @@ class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id=step_id,
                 data_schema=self._get_schema(step_id),
                 errors={"base": "invalid_auth"},
+            )
+        except CannotConnect:
+            return self.async_show_form(
+                step_id=step_id,
+                data_schema=self._get_schema(step_id),
+                errors={"base": "cannot_connect"},
             )
         except Exception:
             _LOGGER.exception("Unexpected error during authentication")

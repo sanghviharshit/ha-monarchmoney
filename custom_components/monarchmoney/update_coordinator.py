@@ -67,9 +67,7 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
         super().__init__(
             hass,
             _LOGGER,
-            # Name of the data. For logging purposes.
             name=DOMAIN,
-            # Polling interval. Will only be polled if there are subscribers.
             update_interval=timedelta(seconds=self._update_interval),
             config_entry=config_entry,
         )
@@ -102,6 +100,8 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
             # Make a simple API call to check if session is valid
             await self._api.get_subscription_details()
             return True
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.debug("Session validation failed: %s", err)
             return False
@@ -149,6 +149,8 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
 
                 return True
 
+            except asyncio.CancelledError:
+                raise
             except RequireMFAException:
                 _LOGGER.warning(
                     "MFA required but no valid MFA secret stored. User needs to reconfigure."
@@ -185,7 +187,7 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
         )
 
         # Optional data groups (only if enabled)
-        optional_tasks: dict[str, asyncio.Task] = {}
+        optional_tasks: dict[str, Any] = {}
 
         if options.get(CONF_ENABLE_CREDIT_SCORE, False):
             optional_tasks["credit_history"] = self._api.get_credit_history()
@@ -218,8 +220,9 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
                 elif key == "recurring":
                     items = result.get("recurringTransactionItems") or []
                     data.recurring = [
-                        r for r in (RecurringTransaction.from_api(i) for i in items)
-                        if r is not None
+                        r
+                        for i in items
+                        if (r := RecurringTransaction.from_api(i)) is not None
                     ]
 
         # Holdings: one call per brokerage account (opt-in)
@@ -247,22 +250,8 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
                             result,
                         )
                     else:
-                        # Build raw account dict for AccountHoldings.from_api
-                        account_raw = {
-                            "id": account.id,
-                            "displayName": account.display_name,
-                            "displayBalance": account.display_balance,
-                            "type": {"name": account.account_type.name},
-                            "credential": {
-                                "institution": {"name": account.institution.name}
-                            },
-                            "updatedAt": account.updated_at,
-                            "includeInNetWorth": account.include_in_net_worth,
-                            "isHidden": account.is_hidden,
-                            "isAsset": account.is_asset,
-                        }
                         data.holdings.append(
-                            AccountHoldings.from_api(account_raw, result)
+                            AccountHoldings.from_api(account, result)
                         )
                 _LOGGER.debug(
                     "Fetched holdings for %d brokerage accounts",

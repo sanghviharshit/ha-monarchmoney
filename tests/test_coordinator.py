@@ -88,7 +88,7 @@ class TestIsAuthError:
 class TestFetchApiDataStructure:
     """Test the expected structure of _fetch_api_data return value.
 
-    These tests verify the data dict structure that _fetch_api_data builds,
+    These tests verify the MonarchData structure that _fetch_api_data builds,
     without requiring a real API connection or Home Assistant instance.
     """
 
