@@ -4,19 +4,19 @@
 
 **Integration for [Monarch Money](https://www.monarchmoney.com/referral/craudhiyod) in [Home Assistant](https://www.home-assistant.io/)**
 
-Track all your Monarch Money financial data — account balances, net worth, cash flow, investments, and more — directly in Home Assistant.
+Track all your Monarch Money financial data - account balances, net worth, cash flow, investments, and more - directly in Home Assistant.
 
 ## Features
 
-- **Account sensors** — balances grouped by type (Cash, Credit Cards, Investments, Loans, Real Estate, Vehicles, Valuables, etc.)
-- **Net Worth sensor** — total net worth with assets/liabilities breakdown
-- **Cash Flow sensor** — monthly savings, income, and expenses with savings rate
-- **Income & Expense sensors** — totals with per-category breakdowns
-- **Credit Score sensors** *(optional)* — per household member, with score history and change tracking
-- **Investment Holdings sensors** *(optional)* — individual securities with price, quantity, cost basis, and gain/loss
-- **Recurring Transactions calendar** *(optional)* — upcoming bills and subscriptions as calendar events
-- **Refresh button** — manually trigger a data refresh
-- **MFA support** — manual code entry or automatic TOTP via secret key
+- **Account sensors** - balances grouped by type (Cash, Credit Cards, Investments, Loans, Real Estate, Vehicles, Valuables, etc.)
+- **Net Worth sensor** - total net worth with assets/liabilities breakdown
+- **Cash Flow sensor** - monthly savings, income, and expenses with savings rate
+- **Income & Expense sensors** - totals with per-category breakdowns
+- **Credit Score sensors** *(optional)* - per household member, with score history and change tracking
+- **Investment Holdings sensors** *(optional)* - individual securities with price, quantity, cost basis, and gain/loss
+- **Recurring Transactions calendar** *(optional)* - upcoming bills and subscriptions as calendar events
+- **Refresh button** - manually trigger a data refresh
+- **MFA support** - manual code entry or automatic TOTP via secret key
 
 ## Installation
 
