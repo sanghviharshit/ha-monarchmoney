@@ -1,6 +1,9 @@
 """Utility methods."""
 
 from datetime import UTC, datetime
+from typing import Any
+
+from monarchmoney import MonarchMoney
 
 
 def format_date(date_str: str) -> str:
@@ -37,3 +40,20 @@ def format_date(date_str: str) -> str:
     if minutes > 0:
         return f"{int(minutes)} minute{'s' if minutes > 1 else ''} ago"
     return "just now"
+
+
+async def monarch_login(
+    api: MonarchMoney,
+    email: str,
+    password: str,
+    mfa_secret: str | None = None,
+) -> None:
+    """Log in to Monarch Money API with optional MFA secret.
+
+    Shared by config_flow.py and update_coordinator.py to avoid duplication.
+    Always disables session saving and session reuse to avoid blocking I/O.
+    """
+    kwargs: dict[str, Any] = {"save_session": False, "use_saved_session": False}
+    if mfa_secret and mfa_secret.strip():
+        kwargs["mfa_secret_key"] = mfa_secret.strip()
+    await api.login(email=email, password=password, **kwargs)

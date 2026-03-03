@@ -1,15 +1,16 @@
 """Button platform for Monarch Money integration."""
 
+from __future__ import annotations
+
 import logging
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .entity import MonarchEntity
 from .update_coordinator import MonarchCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,23 +29,24 @@ async def async_setup_entry(
     )
 
 
-class MonarchRefreshButton(CoordinatorEntity, ButtonEntity):
+class MonarchRefreshButton(MonarchEntity, ButtonEntity):
     """Button to refresh Monarch Money accounts from institutions."""
 
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator, unique_id) -> None:
+    def __init__(self, coordinator: MonarchCoordinator, unique_id: str) -> None:
         """Initialize the refresh button."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, unique_id)
         self._attr_name = "Refresh Accounts"
         self._attr_unique_id = f"{DOMAIN}_{unique_id}_refresh_accounts"
         self._attr_icon = "mdi:refresh"
-        self._id = unique_id
 
     async def async_press(self) -> None:
         """Handle the button press."""
-        accounts = self.coordinator.data.get("accounts", [])
-        account_ids = [a["id"] for a in accounts if a.get("id")]
+        data = self.coordinator.data
+        if not data:
+            _LOGGER.warning("No data available to refresh")
+            return
+
+        account_ids = [a.id for a in data.accounts if a.id]
         if not account_ids:
             _LOGGER.warning("No accounts found to refresh")
             return
@@ -57,13 +59,3 @@ class MonarchRefreshButton(CoordinatorEntity, ButtonEntity):
             return
 
         await self.coordinator.async_request_refresh()
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._id)},
-            name="Monarch",
-            manufacturer="Monarch Money",
-            model="Financial Account",
-        )
