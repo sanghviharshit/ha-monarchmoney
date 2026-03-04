@@ -1,16 +1,17 @@
 """Calendar platform for Monarch Money recurring transactions."""
 
+from __future__ import annotations
+
 from datetime import date, datetime, timedelta
 import logging
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_ENABLE_RECURRING, DOMAIN
+from .entity import MonarchEntity
 from .update_coordinator import MonarchCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,17 +33,14 @@ async def async_setup_entry(
     )
 
 
-class MonarchRecurringCalendar(CoordinatorEntity, CalendarEntity):
+class MonarchRecurringCalendar(MonarchEntity, CalendarEntity):
     """Calendar entity for Monarch Money recurring transactions."""
 
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator, unique_id) -> None:
+    def __init__(self, coordinator: MonarchCoordinator, unique_id: str) -> None:
         """Initialize the recurring transactions calendar."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, unique_id)
         self._attr_name = "Recurring Transactions"
         self._attr_unique_id = f"{DOMAIN}_{unique_id}_recurring_calendar"
-        self._id = unique_id
         self._events: list[CalendarEvent] = []
 
     @property
@@ -70,43 +68,27 @@ class MonarchRecurringCalendar(CoordinatorEntity, CalendarEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        update_data = self.coordinator.data
-        if not update_data:
+        data = self.coordinator.data
+        if not data:
             return
 
-        recurring_data = update_data.get("recurring", {})
-        items = recurring_data.get("recurringTransactionItems") or []
-
         events: list[CalendarEvent] = []
-        for item in items:
-            item_date_str = item.get("date")
-            if not item_date_str:
-                continue
-
+        for item in data.recurring:
             try:
-                item_date = date.fromisoformat(item_date_str)
+                item_date = date.fromisoformat(item.date)
             except (ValueError, TypeError):
                 continue
 
-            stream = item.get("stream") or {}
-            merchant = stream.get("merchant") or {}
-            merchant_name = merchant.get("name", "Unknown")
-            amount = item.get("amount")
-            amount_str = f"${abs(amount):.2f}" if amount is not None else ""
-            category = item.get("category") or {}
-            category_name = category.get("name", "")
-            account = item.get("account") or {}
-            account_name = account.get("displayName", "")
-            frequency = stream.get("frequency", "")
+            amount_str = f"${abs(item.amount):.2f}" if item.amount is not None else ""
+            summary = f"{item.merchant_name} {amount_str}".strip()
 
-            summary = f"{merchant_name} {amount_str}".strip()
-            description_parts = []
-            if category_name:
-                description_parts.append(f"Category: {category_name}")
-            if account_name:
-                description_parts.append(f"Account: {account_name}")
-            if frequency:
-                description_parts.append(f"Frequency: {frequency}")
+            description_parts: list[str] = []
+            if item.category_name:
+                description_parts.append(f"Category: {item.category_name}")
+            if item.account_name:
+                description_parts.append(f"Account: {item.account_name}")
+            if item.frequency:
+                description_parts.append(f"Frequency: {item.frequency}")
 
             events.append(
                 CalendarEvent(
@@ -119,13 +101,3 @@ class MonarchRecurringCalendar(CoordinatorEntity, CalendarEntity):
 
         self._events = events
         self.async_write_ha_state()
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._id)},
-            name="Monarch",
-            manufacturer="Monarch Money",
-            model="Financial Account",
-        )

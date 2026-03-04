@@ -3,10 +3,8 @@
 import asyncio
 import calendar as cal_module
 from datetime import date, timedelta
-import importlib.metadata
 import logging
 import time
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -31,11 +29,21 @@ from .const import (
     DEFAULT_TIMEOUT,
     DOMAIN,
 )
+from .models import (
+    Account,
+    AccountHoldings,
+    CashflowData,
+    CreditHistory,
+    MonarchData,
+    RecurringTransaction,
+    TransactionCategory,
+)
+from .util import monarch_login
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class MonarchCoordinator(DataUpdateCoordinator):
+class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
     """Monarch Money data update coordinator."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
@@ -46,23 +54,28 @@ class MonarchCoordinator(DataUpdateCoordinator):
         self._auth_lock = (
             asyncio.Lock()
         )  # Prevent concurrent re-authentication attempts
-        self._last_auth_attempt = (
+        self._last_auth_attempt: float = (
             0  # Track last authentication attempt for rate limiting
         )
 
         options = config_entry.options
-        self._update_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        self._timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+        self._update_interval: int = options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        )
+        self._timeout: int = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
         super().__init__(
             hass,
             _LOGGER,
-            # Name of the data. For logging purposes.
             name=DOMAIN,
-            # Polling interval. Will only be polled if there are subscribers.
             update_interval=timedelta(seconds=self._update_interval),
             config_entry=config_entry,
         )
+
+    @property
+    def api(self) -> MonarchMoney:
+        """Return the API client."""
+        return self._api
 
     async def _async_setup(self) -> None:
         """Set up session on first refresh (called automatically)."""
@@ -87,6 +100,8 @@ class MonarchCoordinator(DataUpdateCoordinator):
             # Make a simple API call to check if session is valid
             await self._api.get_subscription_details()
             return True
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.debug("Session validation failed: %s", err)
             return False
@@ -115,44 +130,15 @@ class MonarchCoordinator(DataUpdateCoordinator):
                     return False
 
                 _LOGGER.debug("Attempting to authenticate with stored credentials")
-                _LOGGER.debug("Config entry data keys: %s", list(config_data.keys()))
 
-                # Check if we have a valid MFA secret for automatic authentication
                 mfa_secret = config_data.get(CONF_MFA_SECRET)
-                _LOGGER.debug(
-                    "MFA secret found in config: %s",
-                    bool(mfa_secret and mfa_secret.strip()),
-                )
 
                 # Create a fresh API instance for re-authentication to avoid state issues
-                _LOGGER.debug(
-                    "Creating fresh MonarchMoney instance for re-authentication"
-                )
                 fresh_api = MonarchMoney()
-
-                if mfa_secret and mfa_secret.strip():
-                    _LOGGER.debug("Using stored MFA secret for authentication")
-                    await fresh_api.login(
-                        email=email,
-                        password=password,
-                        save_session=False,  # Disable automatic session saving to avoid blocking I/O
-                        use_saved_session=False,  # Don't use existing session for fresh login
-                        mfa_secret_key=mfa_secret.strip(),
-                    )
-                    _LOGGER.info("Successfully authenticated with MFA secret")
-                else:
-                    _LOGGER.debug("No valid MFA secret found, attempting regular login")
-                    # Try regular login first
-                    await fresh_api.login(
-                        email=email,
-                        password=password,
-                        save_session=False,  # Disable automatic session saving to avoid blocking I/O
-                        use_saved_session=False,  # Don't use existing session for fresh login
-                    )
-                    _LOGGER.info("Successfully authenticated with email/password")
+                await monarch_login(fresh_api, email, password, mfa_secret)
+                _LOGGER.info("Successfully authenticated")
 
                 # Replace the old API instance with the fresh authenticated one
-                _LOGGER.debug("Replacing API instance with freshly authenticated one")
                 self._api = fresh_api
 
                 # Persist the new token in the config entry (no pickle file needed)
@@ -160,10 +146,11 @@ class MonarchCoordinator(DataUpdateCoordinator):
                     self.config_entry,
                     data={**self.config_entry.data, CONF_TOKEN: fresh_api.token},
                 )
-                _LOGGER.debug("Token saved to config entry after re-authentication")
 
                 return True
 
+            except asyncio.CancelledError:
+                raise
             except RequireMFAException:
                 _LOGGER.warning(
                     "MFA required but no valid MFA secret stored. User needs to reconfigure."
@@ -173,36 +160,30 @@ class MonarchCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Failed to authenticate with stored credentials: %s", err)
                 return False
 
-    @property
-    def api(self) -> MonarchMoney:
-        """Return the API client."""
-        return self._api
-
-    async def _fetch_api_data(self) -> dict[str, Any]:
+    async def _fetch_api_data(self) -> MonarchData:
         """Fetch all data sets from the Monarch API."""
-        data: dict[str, Any] = {
-            "accounts": [],
-            "categories": [],
-            "cashflow": {},
-        }
+        data = MonarchData()
         options = self.config_entry.options
 
         # Core data (always fetched in parallel)
-        accounts_coro = self._api.get_accounts()
-        categories_coro = self._api.get_transaction_categories()
-        cashflow_coro = self._api.get_cashflow()
-
         accounts_raw, categories_raw, cashflow_raw = await asyncio.gather(
-            accounts_coro, categories_coro, cashflow_coro
+            self._api.get_accounts(),
+            self._api.get_transaction_categories(),
+            self._api.get_cashflow(),
         )
 
-        data["accounts"] = accounts_raw.get("accounts") or []
-        data["categories"] = categories_raw.get("categories") or []
-        data["cashflow"] = cashflow_raw or {}
+        data.accounts = [
+            Account.from_api(a) for a in accounts_raw.get("accounts") or []
+        ]
+        data.categories = [
+            TransactionCategory.from_api(c)
+            for c in categories_raw.get("categories") or []
+        ]
+        data.cashflow = CashflowData.from_api(cashflow_raw or {})
         _LOGGER.debug(
             "Fetched %d accounts, %d categories from API",
-            len(data["accounts"]),
-            len(data["categories"]),
+            len(data.accounts),
+            len(data.categories),
         )
 
         # Optional data groups (only if enabled)
@@ -234,26 +215,29 @@ class MonarchCoordinator(DataUpdateCoordinator):
             for key, result in zip(keys, results):
                 if isinstance(result, Exception):
                     _LOGGER.error("Failed to fetch %s: %s", key, result)
-                    data[key] = {}
-                else:
-                    data[key] = result
-                    _LOGGER.debug("Fetched %s data", key)
+                elif key == "credit_history":
+                    data.credit_history = CreditHistory.from_api(result)
+                elif key == "recurring":
+                    items = result.get("recurringTransactionItems") or []
+                    data.recurring = [
+                        r
+                        for i in items
+                        if (r := RecurringTransaction.from_api(i)) is not None
+                    ]
 
-        # Holdings: one call per brokerage account (opt-in, used by both per-account and aggregated)
+        # Holdings: one call per brokerage account (opt-in)
         if options.get(CONF_ENABLE_HOLDINGS, False) or options.get(
             CONF_ENABLE_AGGREGATED_HOLDINGS, False
         ):
             brokerage_accounts = [
                 a
-                for a in data["accounts"]
-                if a.get("type", {}).get("name") == "brokerage"
-                and not a.get("isHidden", False)
+                for a in data.accounts
+                if a.account_type.name == "brokerage" and not a.is_hidden
             ]
-            holdings_data: dict[str, Any] = {}
             if brokerage_accounts:
                 holdings_results = await asyncio.gather(
                     *(
-                        self._api.get_account_holdings(int(a["id"]))
+                        self._api.get_account_holdings(int(a.id))
                         for a in brokerage_accounts
                     ),
                     return_exceptions=True,
@@ -262,19 +246,17 @@ class MonarchCoordinator(DataUpdateCoordinator):
                     if isinstance(result, Exception):
                         _LOGGER.error(
                             "Failed to fetch holdings for %s: %s",
-                            account.get("displayName"),
+                            account.display_name,
                             result,
                         )
                     else:
-                        holdings_data[account["id"]] = {
-                            "account": account,
-                            "holdings": result,
-                        }
+                        data.holdings.append(
+                            AccountHoldings.from_api(account, result)
+                        )
                 _LOGGER.debug(
                     "Fetched holdings for %d brokerage accounts",
-                    len(holdings_data),
+                    len(data.holdings),
                 )
-            data["holdings"] = holdings_data
 
         return data
 
@@ -287,23 +269,12 @@ class MonarchCoordinator(DataUpdateCoordinator):
             for keyword in ("unauthorized", "authentication", "401")
         )
 
-    async def _async_update_data(self) -> dict[str, Any]:
+    async def _async_update_data(self) -> MonarchData:
         """Fetch data from API endpoint."""
         try:
             async with asyncio.timeout(self._timeout):
                 try:
-                    data = await self._fetch_api_data()
-
-                    # Debug: log account types for troubleshooting
-                    if data["accounts"]:
-                        account_types = [
-                            acc.get("type", {}).get("name")
-                            for acc in data["accounts"]
-                            if acc.get("type")
-                        ]
-                        _LOGGER.debug("Account types found: %s", set(account_types))
-
-                    return data
+                    return await self._fetch_api_data()
                 except RequireMFAException as err:
                     _LOGGER.error("MFA required for Monarch Money authentication")
                     raise ConfigEntryAuthFailed(
