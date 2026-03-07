@@ -43,10 +43,11 @@ After setup, go to the integration's **Options** to configure:
 
 | Option | Default | Description |
 |---|---|---|
-| Scan interval | 3600s (1hr) | How often to poll Monarch's API |
-| Timeout | 30s | API request timeout |
+| Scan interval (minutes) | 60 (1hr) | How often to poll Monarch's API (60, 120, 240, 360, 720, 1440) |
+| Timeout (seconds) | 30 | API request timeout (10, 15, 30, 45, 60) |
 | Credit score | Off | Enable credit score sensors |
 | Investment holdings | Off | Enable per-security holding sensors |
+| Aggregated holdings | Off | Enable aggregated investment holdings across accounts |
 | Recurring transactions | Off | Enable recurring transactions calendar |
 
 ## Planned
