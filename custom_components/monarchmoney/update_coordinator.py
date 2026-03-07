@@ -59,7 +59,7 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
         )
 
         options = config_entry.options
-        self._update_interval: int = options.get(
+        scan_interval: int = options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
         )
         self._timeout: int = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
@@ -68,7 +68,7 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=self._update_interval),
+            update_interval=timedelta(minutes=scan_interval),
             config_entry=config_entry,
         )
 

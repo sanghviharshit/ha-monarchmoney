@@ -183,8 +183,9 @@ class TestConfigFlowConstants:
         assert "mfa_code" in schema_keys
 
     def test_options_schema_fields(self) -> None:
-        """Test that OPTIONS_SCHEMA has expected fields."""
-        from custom_components.monarchmoney.config_flow import OPTIONS_SCHEMA
-        schema_keys = [str(k) for k in OPTIONS_SCHEMA.schema]
+        """Test that _build_options_schema produces expected fields."""
+        from custom_components.monarchmoney.config_flow import _build_options_schema
+        schema = _build_options_schema()
+        schema_keys = [str(k) for k in schema.schema]
         assert "scan_interval" in schema_keys
         assert "timeout" in schema_keys

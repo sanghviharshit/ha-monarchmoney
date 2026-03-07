@@ -47,8 +47,8 @@
     "step": {
       "init": {
         "data": {
-          "scan_interval": "Scan Interval",
-          "timeout": "Timeout",
+          "scan_interval": "Scan Interval (minutes)",
+          "timeout": "Timeout (seconds)",
           "enable_credit_score": "Enable Credit Score",
           "enable_holdings": "Enable Investment Holdings (per account)",
           "enable_aggregated_holdings": "Enable Aggregated Investment Holdings",

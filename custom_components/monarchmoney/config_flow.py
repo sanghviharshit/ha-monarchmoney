@@ -12,6 +12,12 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsF
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.selector import (
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from monarchmoney import MonarchMoney, RequireMFAException, LoginFailedException
 
 from .util import monarch_login
@@ -74,18 +80,58 @@ MFA_SETUP_SCHEMA = vol.Schema(
     }
 )
 
-OPTIONS_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.In(
-            VALUES_SCAN_INTERVAL
-        ),
-        vol.Required(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): vol.In(VALUES_TIMEOUT),
-        vol.Optional(CONF_ENABLE_CREDIT_SCORE, default=False): bool,
-        vol.Optional(CONF_ENABLE_HOLDINGS, default=False): bool,
-        vol.Optional(CONF_ENABLE_AGGREGATED_HOLDINGS, default=False): bool,
-        vol.Optional(CONF_ENABLE_RECURRING, default=False): bool,
-    }
+SCAN_INTERVAL_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            SelectOptionDict(value=str(k), label=v)
+            for k, v in VALUES_SCAN_INTERVAL.items()
+        ],
+        mode=SelectSelectorMode.DROPDOWN,
+    )
 )
+
+TIMEOUT_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            SelectOptionDict(value=str(k), label=v)
+            for k, v in VALUES_TIMEOUT.items()
+        ],
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
+
+
+def _build_options_schema(
+    scan_interval: int = DEFAULT_SCAN_INTERVAL,
+    timeout: int = DEFAULT_TIMEOUT,
+    enable_credit_score: bool = False,
+    enable_holdings: bool = False,
+    enable_aggregated_holdings: bool = False,
+    enable_recurring: bool = False,
+) -> vol.Schema:
+    """Build options schema with current values as defaults."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_SCAN_INTERVAL, default=str(scan_interval)
+            ): SCAN_INTERVAL_SELECTOR,
+            vol.Required(
+                CONF_TIMEOUT, default=str(timeout)
+            ): TIMEOUT_SELECTOR,
+            vol.Optional(
+                CONF_ENABLE_CREDIT_SCORE, default=enable_credit_score
+            ): bool,
+            vol.Optional(
+                CONF_ENABLE_HOLDINGS, default=enable_holdings
+            ): bool,
+            vol.Optional(
+                CONF_ENABLE_AGGREGATED_HOLDINGS, default=enable_aggregated_holdings
+            ): bool,
+            vol.Optional(
+                CONF_ENABLE_RECURRING, default=enable_recurring
+            ): bool,
+        }
+    )
 
 
 class MonarchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -376,15 +422,24 @@ class MonarchOptionsFlowHandler(OptionsFlow):
         self.entry = entry
 
     async def async_step_init(
-        self, user_input: dict[str, str] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
+            # SelectSelector returns strings; convert back to int for storage
+            user_input[CONF_SCAN_INTERVAL] = int(user_input[CONF_SCAN_INTERVAL])
+            user_input[CONF_TIMEOUT] = int(user_input[CONF_TIMEOUT])
             return self.async_create_entry(title="", data=user_input)
 
+        opts = self.entry.options
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                OPTIONS_SCHEMA, self.entry.options
+            data_schema=_build_options_schema(
+                scan_interval=int(opts.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
+                timeout=int(opts.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)),
+                enable_credit_score=opts.get(CONF_ENABLE_CREDIT_SCORE, False),
+                enable_holdings=opts.get(CONF_ENABLE_HOLDINGS, False),
+                enable_aggregated_holdings=opts.get(CONF_ENABLE_AGGREGATED_HOLDINGS, False),
+                enable_recurring=opts.get(CONF_ENABLE_RECURRING, False),
             ),
         )

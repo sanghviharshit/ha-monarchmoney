@@ -136,21 +136,21 @@ class TestCoordinatorConstants:
     """Test coordinator configuration constants."""
 
     def test_default_scan_interval(self) -> None:
-        """Test that default scan interval is 3600 seconds (1 hour)."""
-        assert DEFAULT_SCAN_INTERVAL == 3600
+        """Test that default scan interval is 60 minutes (1 hour)."""
+        assert DEFAULT_SCAN_INTERVAL == 60
 
     def test_default_timeout(self) -> None:
         """Test that default timeout is 30 seconds."""
         assert DEFAULT_TIMEOUT == 30
 
     def test_scan_interval_values(self) -> None:
-        """Test that scan interval options include expected values."""
+        """Test that scan interval options include expected values (in minutes)."""
         assert 60 in VALUES_SCAN_INTERVAL
-        assert 3600 in VALUES_SCAN_INTERVAL
-        assert 86400 in VALUES_SCAN_INTERVAL
+        assert 360 in VALUES_SCAN_INTERVAL
+        assert 1440 in VALUES_SCAN_INTERVAL
 
     def test_timeout_values(self) -> None:
-        """Test that timeout options include expected values."""
+        """Test that timeout options include expected values (in seconds)."""
         assert 10 in VALUES_TIMEOUT
         assert 30 in VALUES_TIMEOUT
         assert 60 in VALUES_TIMEOUT

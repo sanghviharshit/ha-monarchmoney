@@ -21,8 +21,21 @@ CONF_ENABLE_CREDIT_SCORE = "enable_credit_score"
 CONF_ENABLE_HOLDINGS = "enable_holdings"
 CONF_ENABLE_AGGREGATED_HOLDINGS = "enable_aggregated_holdings"
 
-VALUES_SCAN_INTERVAL = [60, 120, 600, 1800, 3600, 21600, 86400]
-VALUES_TIMEOUT = [10, 15, 30, 45, 60]
+VALUES_SCAN_INTERVAL = {
+    60: "60 minutes (1 hour)",
+    120: "120 minutes (2 hours)",
+    240: "240 minutes (4 hours)",
+    360: "360 minutes (6 hours)",
+    720: "720 minutes (12 hours)",
+    1440: "1440 minutes (24 hours)",
+}
+VALUES_TIMEOUT = {
+    10: "10 seconds",
+    15: "15 seconds",
+    30: "30 seconds",
+    45: "45 seconds",
+    60: "60 seconds",
+}
 
-DEFAULT_SCAN_INTERVAL = VALUES_SCAN_INTERVAL[4]
-DEFAULT_TIMEOUT = VALUES_TIMEOUT[2]
+DEFAULT_SCAN_INTERVAL = 60
+DEFAULT_TIMEOUT = 30
