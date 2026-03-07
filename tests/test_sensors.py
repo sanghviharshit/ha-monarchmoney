@@ -174,6 +174,48 @@ def test_income_by_category():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Total assets / Total liabilities
+# ---------------------------------------------------------------------------
+
+
+def test_total_assets_calculation():
+    """Total assets = sum of asset accounts included in net worth and not hidden."""
+    accounts = _parse_accounts()
+    asset_accounts = [
+        a for a in accounts
+        if a.is_asset and a.include_in_net_worth and not a.is_hidden
+    ]
+
+    total = round(
+        sum(a.display_balance for a in asset_accounts if a.display_balance is not None), 2
+    )
+    # Active assets: checking (5432.10) + savings (25000.00) + brokerage (150000.00)
+    assert total == 180432.10
+    assert len(asset_accounts) == 3
+
+
+def test_total_liabilities_calculation():
+    """Total liabilities = sum of liability accounts included in net worth and not hidden."""
+    accounts = _parse_accounts()
+    liability_accounts = [
+        a for a in accounts
+        if not a.is_asset and a.include_in_net_worth and not a.is_hidden
+    ]
+
+    total = round(
+        sum(a.display_balance for a in liability_accounts if a.display_balance is not None), 2
+    )
+    # Active liabilities: credit card (1500.75) only
+    assert total == 1500.75
+    assert len(liability_accounts) == 1
+
+
+# ---------------------------------------------------------------------------
+# Credit score
+# ---------------------------------------------------------------------------
+
+
 def test_credit_score_per_user():
     """Credit score snapshots should be filterable per user."""
     credit = CreditHistory.from_api(MOCK_CREDIT_RESPONSE)

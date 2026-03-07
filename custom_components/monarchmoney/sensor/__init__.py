@@ -26,6 +26,7 @@ from .holding import MonarchHoldingSensor
 from .aggregated_holding import MonarchAggregatedHoldingSensor
 from .income import MonarchMoneyIncomeSensor
 from .net_worth import MonarchMoneyNetWorthSensor
+from .summary import MonarchMoneyTotalAssetsSensor, MonarchMoneyTotalLiabilitiesSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +54,8 @@ async def async_setup_entry(
         sensors.append(MonarchMoneyCategorySensor(coordinator, category, unique_id))
 
     sensors.append(MonarchMoneyNetWorthSensor(coordinator, unique_id))
+    sensors.append(MonarchMoneyTotalAssetsSensor(coordinator, unique_id))
+    sensors.append(MonarchMoneyTotalLiabilitiesSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyCashFlowSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyIncomeSensor(coordinator, unique_id))
     sensors.append(MonarchMoneyExpenseSensor(coordinator, unique_id))

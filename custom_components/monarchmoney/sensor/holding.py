@@ -54,6 +54,7 @@ class MonarchHoldingSensor(MonarchSensorEntity):
                 sec = holding.security
                 self._attrs = {
                     "ticker": sec.ticker,
+                    "security_name": sec.name,
                     "quantity": holding.quantity,
                     "cost_basis": holding.basis,
                     "current_price": sec.current_price,

@@ -38,6 +38,7 @@ class MonarchAggregatedHoldingSensor(MonarchSensorEntity):
         total_basis = 0.0
         accounts: list[str] = []
         current_price = None
+        security_name = None
         security_type = None
         one_day_change_percent = None
         one_day_change_dollars = None
@@ -50,6 +51,7 @@ class MonarchAggregatedHoldingSensor(MonarchSensorEntity):
                     total_basis += holding.basis or 0.0
                     accounts.append(acct_holdings.account.display_name)
                     current_price = holding.security.current_price
+                    security_name = holding.security.name
                     security_type = holding.security.type_display
                     one_day_change_percent = holding.security.one_day_change_percent
                     one_day_change_dollars = holding.security.one_day_change_dollars
@@ -57,6 +59,7 @@ class MonarchAggregatedHoldingSensor(MonarchSensorEntity):
         self._state = round(total_value, 2)
         self._attrs = {
             "ticker": self._ticker,
+            "security_name": security_name,
             "quantity": round(total_quantity, 4),
             "cost_basis": round(total_basis, 2),
             "current_price": current_price,
