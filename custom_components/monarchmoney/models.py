@@ -50,6 +50,7 @@ class Account:
     include_in_net_worth: bool
     is_hidden: bool
     is_asset: bool
+    holdings_count: int
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Account:
@@ -66,6 +67,7 @@ class Account:
             include_in_net_worth=data.get("includeInNetWorth", False),
             is_hidden=data.get("isHidden", False),
             is_asset=data.get("isAsset", True),
+            holdings_count=data.get("holdingsCount", 0),
         )
 
 
@@ -290,6 +292,22 @@ class AccountHoldings:
         holdings: list[Holding] = []
         for edge in edges:
             node = edge.get("node") or {}
+            # Some account types (e.g. 401k mutual funds) return security=None
+            # but embed the security details inside a nested "holdings" list.
+            if not node.get("security"):
+                nested = (node.get("holdings") or [{}])[0]
+                if nested:
+                    node = {
+                        **node,
+                        "security": {
+                            "ticker": nested.get("ticker"),
+                            "name": nested.get("name", ""),
+                            "currentPrice": nested.get("closingPrice", 0.0),
+                            "typeDisplay": nested.get("typeDisplay", ""),
+                            "oneDayChangePercent": 0.0,
+                            "oneDayChangeDollars": 0.0,
+                        },
+                    }
             holding = Holding.from_api(node)
             if holding is not None:
                 holdings.append(holding)
