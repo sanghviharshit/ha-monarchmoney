@@ -8,7 +8,10 @@ dependency and MUST NOT import from any other integration module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +289,7 @@ class AccountHoldings:
         cls, account: Account | dict[str, Any], holdings_data: dict[str, Any]
     ) -> AccountHoldings:
         """Build from an Account object (or raw dict) and holdings response."""
+        account_obj = account if isinstance(account, Account) else Account.from_api(account)
         portfolio = holdings_data.get("portfolio") or {}
         agg = portfolio.get("aggregateHoldings") or {}
         edges = agg.get("edges") or []
@@ -295,6 +299,9 @@ class AccountHoldings:
             # Some account types (e.g. 401k mutual funds) return security=None
             # but embed the security details inside a nested "holdings" list.
             if not node.get("security"):
+                _LOGGER.debug(
+                    "Holding node missing security, raw node: %s", node
+                )
                 nested = (node.get("holdings") or [{}])[0]
                 if nested:
                     node = {
@@ -308,10 +315,29 @@ class AccountHoldings:
                             "oneDayChangeDollars": 0.0,
                         },
                     }
+                    # The aggregate totalValue is computed from the security's
+                    # closing price, which lags 1-2 days for non-listed funds
+                    # (CITs). When this is the account's only holding, the
+                    # account's synced balance is the fresher number Monarch
+                    # itself displays — prefer it.
+                    if len(edges) == 1 and account_obj.display_balance:
+                        balance = account_obj.display_balance
+                        quantity = node.get("quantity") or 0.0
+                        _LOGGER.debug(
+                            "Single nested holding: overriding totalValue %s "
+                            "with account balance %s",
+                            node.get("totalValue"),
+                            balance,
+                        )
+                        node = {**node, "totalValue": balance}
+                        if quantity > 0:
+                            node["security"] = {
+                                **node["security"],
+                                "currentPrice": balance / quantity,
+                            }
             holding = Holding.from_api(node)
             if holding is not None:
                 holdings.append(holding)
-        account_obj = account if isinstance(account, Account) else Account.from_api(account)
         return cls(
             account=account_obj,
             holdings=holdings,
