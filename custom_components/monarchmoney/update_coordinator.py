@@ -229,6 +229,15 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
         if options.get(CONF_ENABLE_HOLDINGS, False) or options.get(
             CONF_ENABLE_AGGREGATED_HOLDINGS, False
         ):
+            for a in data.accounts:
+                _LOGGER.debug(
+                    "Account %s (id=%s): type=%s holdings_count=%d is_hidden=%s",
+                    a.display_name,
+                    a.id,
+                    a.account_type.name,
+                    a.holdings_count,
+                    a.is_hidden,
+                )
             brokerage_accounts = [
                 a
                 for a in data.accounts
@@ -250,8 +259,12 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
                             result,
                         )
                     else:
-                        data.holdings.append(
-                            AccountHoldings.from_api(account, result)
+                        acct_holdings = AccountHoldings.from_api(account, result)
+                        data.holdings.append(acct_holdings)
+                        _LOGGER.debug(
+                            "Parsed %d holdings for %s",
+                            len(acct_holdings.holdings),
+                            account.display_name,
                         )
                 _LOGGER.debug(
                     "Fetched holdings for %d brokerage accounts",
