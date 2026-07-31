@@ -1,0 +1,8 @@
+# Test/dev dependencies (CI only).
+#
+# Runtime dependencies are NOT listed here - Home Assistant installs those
+# from the "requirements" field in custom_components/monarchmoney/manifest.json,
+# and CI installs them from the same manifest to avoid version drift.
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-homeassistant-custom-component==0.13.205

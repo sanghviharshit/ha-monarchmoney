@@ -26,9 +26,10 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: |
-          pip install pytest pytest-asyncio pytest-homeassistant-custom-component
-          # Install the component's runtime requirements straight from the
-          # manifest so CI always tests the version the integration ships.
+          # Test/dev deps are pinned in requirements_test.txt.
+          pip install -r requirements_test.txt
+          # Runtime deps come straight from the manifest so CI always tests
+          # the version the integration ships.
           jq -r '.requirements[]' custom_components/monarchmoney/manifest.json \
             | xargs -r pip install
       - name: Run tests
