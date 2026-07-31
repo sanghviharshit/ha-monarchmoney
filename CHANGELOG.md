@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-07-31
+
+### Fixed
+- **Holdings with null security dropped** - some account types (e.g. employer 401k plans holding collective investment trusts) return `security: null` on the aggregate holding node and nest the security details inside a `holdings[]` array instead. These holdings were previously discarded entirely, so no sensor was created. `AccountHoldings.from_api` now falls back to the nested holding, mapping `name`, `ticker`, and `closingPrice` into the expected shape. Nested `ticker`/`name` are coerced to `""` (not `None`) so recovered funds are not silently excluded from aggregated holding sensors. (#25)
+- **Stale value for single-holding 401k accounts** - the aggregate `totalValue` is computed by Monarch from the security's closing price, which lags 1-2 days for non-exchange-listed funds. When the null-security fallback fires and it is the account's only holding, the account's synced `displayBalance` is now used as the holding value and `currentPrice` is derived from it, matching the figure shown in the Monarch UI. Multi-holding accounts are left untouched. (#25)
+
+---
+
 ## [2.1.1] - 2026-07-31
 
 ### Fixed
@@ -173,7 +181,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release: account balance sensors grouped by account type, net worth sensor, basic config flow with email/password login
 
-[Unreleased]: https://github.com/sanghviharshit/ha-monarchmoney/compare/2.1.1...HEAD
+[Unreleased]: https://github.com/sanghviharshit/ha-monarchmoney/compare/2.1.2...HEAD
+[2.1.2]: https://github.com/sanghviharshit/ha-monarchmoney/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/sanghviharshit/ha-monarchmoney/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/sanghviharshit/ha-monarchmoney/compare/2.0.0...2.1.0
 [2.0.0]: https://github.com/sanghviharshit/ha-monarchmoney/compare/1.5.0...2.0.0
