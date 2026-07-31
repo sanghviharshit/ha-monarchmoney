@@ -185,6 +185,96 @@ class TestAccountHoldings:
         # 3 edges, but one has security=None, so only 2 holdings
         assert len(ah.holdings) == 2
 
+    def test_nested_security_fallback_multiple_holdings(self) -> None:
+        """security=None falls back to nested holdings[0] (e.g. 401k CIT)."""
+        account_raw = MOCK_ACCOUNTS_RESPONSE["accounts"][3]  # brokerage
+        holdings_data = {
+            "portfolio": {
+                "aggregateHoldings": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "hold_cit",
+                                "totalValue": 35729.00,
+                                "quantity": 100.0,
+                                "basis": 30000.00,
+                                "security": None,
+                                "holdings": [
+                                    {
+                                        "type": "mutual_fund",
+                                        "name": "Example S&P 500 DC CIT",
+                                        "ticker": None,
+                                        "closingPrice": 357.29,
+                                    }
+                                ],
+                            }
+                        },
+                        {
+                            "node": {
+                                "id": "hold_stock",
+                                "totalValue": 4887.50,
+                                "quantity": 25.0,
+                                "basis": 3500.00,
+                                "security": {
+                                    "ticker": "AAPL",
+                                    "name": "Apple Inc.",
+                                    "currentPrice": 195.50,
+                                    "typeDisplay": "Stock",
+                                    "oneDayChangePercent": -0.15,
+                                    "oneDayChangeDollars": -0.29,
+                                },
+                            }
+                        },
+                    ]
+                }
+            }
+        }
+        ah = AccountHoldings.from_api(account_raw, holdings_data)
+        assert len(ah.holdings) == 2
+        cit = ah.holdings[0]
+        # ticker/name must be "" (not None) so aggregated sensors keep the
+        # holding and the attribute renders as "" rather than null.
+        assert cit.security.ticker == ""
+        assert cit.security.name == "Example S&P 500 DC CIT"
+        assert cit.security.current_price == 357.29
+        # Multiple holdings: totalValue is left as-is (not overridden).
+        assert cit.total_value == 35729.00
+
+    def test_nested_security_single_holding_uses_account_balance(self) -> None:
+        """A lone nested holding takes the account's synced balance/price."""
+        account_raw = MOCK_ACCOUNTS_RESPONSE["accounts"][3]  # brokerage, 150000.00
+        balance = account_raw["displayBalance"]
+        holdings_data = {
+            "portfolio": {
+                "aggregateHoldings": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "hold_cit",
+                                "totalValue": 35729.00,  # stale
+                                "quantity": 100.0,
+                                "basis": 30000.00,
+                                "security": None,
+                                "holdings": [
+                                    {
+                                        "name": "Example S&P 500 DC CIT",
+                                        "ticker": None,
+                                        "closingPrice": 357.29,
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+        ah = AccountHoldings.from_api(account_raw, holdings_data)
+        assert len(ah.holdings) == 1
+        cit = ah.holdings[0]
+        assert cit.total_value == balance
+        assert cit.security.current_price == balance / 100.0
+        assert cit.security.ticker == ""
+
 
 # ---------------------------------------------------------------------------
 # Recurring transaction models
