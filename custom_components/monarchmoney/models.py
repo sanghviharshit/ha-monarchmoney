@@ -53,7 +53,6 @@ class Account:
     include_in_net_worth: bool
     is_hidden: bool
     is_asset: bool
-    holdings_count: int
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Account:
@@ -70,7 +69,6 @@ class Account:
             include_in_net_worth=data.get("includeInNetWorth", False),
             is_hidden=data.get("isHidden", False),
             is_asset=data.get("isAsset", True),
-            holdings_count=data.get("holdingsCount", 0),
         )
 
 
@@ -307,8 +305,8 @@ class AccountHoldings:
                     node = {
                         **node,
                         "security": {
-                            "ticker": nested.get("ticker"),
-                            "name": nested.get("name", ""),
+                            "ticker": nested.get("ticker") or "",
+                            "name": nested.get("name") or "",
                             "currentPrice": nested.get("closingPrice", 0.0),
                             "typeDisplay": nested.get("typeDisplay", ""),
                             "oneDayChangePercent": 0.0,

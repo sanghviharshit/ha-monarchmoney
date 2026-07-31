@@ -231,11 +231,10 @@ class MonarchCoordinator(DataUpdateCoordinator[MonarchData]):
         ):
             for a in data.accounts:
                 _LOGGER.debug(
-                    "Account %s (id=%s): type=%s holdings_count=%d is_hidden=%s",
+                    "Account %s (id=%s): type=%s is_hidden=%s",
                     a.display_name,
                     a.id,
                     a.account_type.name,
-                    a.holdings_count,
                     a.is_hidden,
                 )
             brokerage_accounts = [
